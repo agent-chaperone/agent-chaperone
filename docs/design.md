@@ -67,10 +67,11 @@ upstream server (child process over stdio, or Streamable HTTP)
 
 One TypeScript package. It speaks JSON-RPC over stdio on both sides using its own newline framing rather than the MCP SDK's stdio transports, for the reason in ADR-0006: the SDK validates each message against a strict schema and rejects a request carrying an unknown top-level field, which a transparent proxy cannot do. Requests and responses are correlated by JSON-RPC id so a result can be screened together with the arguments that produced it.
 
-Screens run as messages arrive. Independent questions about one message go in one request. Different messages are screened in parallel.
+Screens run as messages arrive. Independent questions about one message go in one request, and the chunks of one large result go out together. Messages in the same direction are screened one at a time, because a relay that answered them out of order would hand a client a reply before the call it answers.
 
 Failure handling, per mode:
 
+- A result the screen could not read all of: text past the block cap is withheld in `enforce` and `strict`, because whoever wrote the result chose how long it was. Parts that are not text at all, such as an image, are reported to the agent in `enforce` and withheld only in `strict`, because they are ordinary in honest traffic and nothing can read them.
 - Backend timeout, 429, or 5xx in `shadow`: log and pass through.
 - Same in `enforce`: pass through for reads, hold for calls the deterministic rules or MCP annotations mark as destructive.
 - `strict`: hold everything on backend failure.

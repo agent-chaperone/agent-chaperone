@@ -1,5 +1,13 @@
 export { createProxy } from './proxy.js';
-export type { Direction, ProxyEvent, ProxyHandle, ProxyOptions, ProxyStreams } from './proxy.js';
+export type {
+  Direction,
+  Gate,
+  GateVerdict,
+  ProxyEvent,
+  ProxyHandle,
+  ProxyOptions,
+  ProxyStreams,
+} from './proxy.js';
 export {
   spawnUpstream,
   UpstreamStartError,

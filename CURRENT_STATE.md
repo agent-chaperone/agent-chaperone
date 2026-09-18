@@ -54,23 +54,30 @@ A tool call and a tool result turned into the exact request the harness sent, an
 
 The harness now sends the batteries the tool sends, so the README's numbers describe the shipping request rather than a subset of it. Re-running it moved the numbers very little: AUC is unchanged on all four sets, recall on InjecAgent went up slightly and on BIPIA down slightly, and the benign documentation set gained one false positive at 0.5. The two questions that ship only with a policy or a task are still unmeasured.
 
+### Screening, wired to the proxy (#8)
+
+The relay now asks a gate before it writes. A gate returning a verdict rather than a promise is written in the same turn it arrived, so traffic that is not screened pays nothing; anything awaited is queued so messages leave in the order they came, the source stops being read while a decision is pending, and a direction does not close until what it is holding has landed. A withheld call is answered to the client rather than silently dropped, because a client waiting on a request the server never received waits forever.
+
+`screening/` is where the layers meet: the deterministic rules settle what they can without a request, what is left becomes one backend call, and the answers become an action the policy chose. Shadow records what it decided and applies nothing, enforce acts, and strict fails closed, including when the backend raises rather than returning a failure. With no API key the rules are the whole screen and every judgment says so, so a forward is never mistaken for an all-clear.
+
+The CLI wires it up: it reads the policy file, picks a backend, and screens a real session. Judgments go to stderr as JSON lines until the audit log gives them a home.
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
-Nothing in flight. Every piece the proxy needs now exists; what is left is putting them in the path of a tool call.
+Nothing in flight. A session is screened end to end; what is missing is where the judgments go and how a held call gets resumed.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `proxy` (#8): wire the screens in, with shadow and enforce modes.
-2. `audit` (#9): JSONL writer, `log` and `show` commands.
-3. `cli` (#10): hold and approve flow, `approve` command.
-4. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-5. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `audit` (#9): JSONL writer, `log` and `show` commands.
+2. `cli` (#10): hold and approve flow, `approve` command.
+3. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+4. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
@@ -88,11 +95,12 @@ M1, in dependency order:
 | Tooling, CI, templates, docs | done |
 | Design document and ADRs | done |
 | Benchmark harness and results | done |
-| proxy | relay done (#3), screening pending (#8) |
-| policy | schema and decision functions done (#4), not yet consulted (#8) |
-| rules | done (#5), not yet consulted (#8) |
-| backends | done (#6), not yet consulted (#8) |
-| screens | done (#7), not yet consulted (#8) |
+| proxy | relay done (#3), screening wired in (#8) |
+| policy | done (#4), consulted on every message (#8) |
+| rules | done (#5), consulted on every message (#8) |
+| backends | done (#6), asked on every screen (#8) |
+| screens | done (#7), built on every screen (#8) |
+| screening | done (#8) |
 | audit | not started |
-| cli | minimal entry point done, commands pending (#10) |
+| cli | wraps and screens a server (#8), commands pending (#10) |
 | hooks | not started |

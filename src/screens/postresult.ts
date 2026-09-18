@@ -15,7 +15,7 @@
 
 import type { Answer, Battery } from '../backends/index.js';
 import type { ResultAnswers, ScoreAnswer } from '../policy/index.js';
-import type { Block, HiddenRegion } from '../rules/index.js';
+import type { Block } from '../rules/index.js';
 import { noulOf, scoreOf } from './precall.js';
 import { EXPOSES_SECRET, INSTRUCTS_READER, RESULT_SEVERITY, whichBlock } from './questions.js';
 
@@ -72,8 +72,12 @@ export interface PostResultInput {
   readonly tool: PostResultTool;
   /** From `inspectResult`. Already redacted and already numbered. */
   readonly blocks: readonly Block[];
-  /** From `inspectResult`. Offsets are dropped here; they are for a reviewer, not the model. */
-  readonly hidden_regions?: readonly HiddenRegion[];
+  /**
+   * From `inspectResult`. Only the block and the kind are read: an offset locates
+   * concealment for a reviewer, and is not something the model is being asked
+   * about.
+   */
+  readonly hidden_regions?: readonly StateHiddenRegion[];
   readonly maxStateChars?: number;
 }
 

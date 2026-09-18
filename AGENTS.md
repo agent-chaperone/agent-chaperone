@@ -16,7 +16,8 @@ agent-chaperone is a transparent proxy for the Model Context Protocol. It screen
 agent-chaperone/
   src/
     index.ts     Public entry point
-    proxy/       Transport plumbing, framing, request and response correlation
+    proxy/       Transport plumbing, framing, correlation, and the gate seam
+    screening/   The gate: rules, screens, backend and policy in one decision
     cli/         Command line entry point
     screens/     State builders and question batteries
     rules/       Deterministic checks, redaction, hidden text
@@ -34,10 +35,10 @@ agent-chaperone/
 ```
 
 Directories marked with an issue number do not exist yet and arrive with that
-piece of work. The relay in `proxy/` has landed, along with the backend it asks
-and the requests it sends; what has not landed is the wiring that puts them in
-the path of a tool call. `cli/` is a minimal entry point, not the full command
-set.
+piece of work. Traffic is screened end to end: `cli/` wraps a server, and
+`screening/` decides what the relay does with each message. What is missing is
+where judgments go, which is the audit log, and the approve flow that makes a
+held call resumable.
 
 ## Build Commands
 
@@ -75,7 +76,7 @@ bash fetch.sh                      # download public datasets
 - Vitest. `*.test.ts` next to the code it tests.
 - No test calls the TypeSafe API and no test reaches the network. Model answers come from the fake in `backends/fake.ts`, which replays recordings keyed by a hash of the request. The TypeSafe adapter's own tests drive it through an injected transport.
 - The API key is read from `TYPESAFE_API_KEY` by the SDK and by nothing else in this package. Tests set it to an obvious placeholder.
-- Proxy paths are tested against a fake upstream server and a fake client.
+- Proxy paths are tested against a fake upstream server and a fake client. The gate is tested through a real `createProxy` rather than by calling it directly, so ordering, flow control and shutdown are covered by the same tests that cover the decisions.
 - Decision functions are pure and tested exhaustively on answer and policy combinations.
 
 ## Commit Conventions

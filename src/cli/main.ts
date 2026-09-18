@@ -1,27 +1,38 @@
 #!/usr/bin/env node
 /**
- * Minimal entry point: wrap an MCP server and relay its traffic.
+ * Entry point: wrap an MCP server and screen its traffic.
  *
- * The full command set (log, show, approve, report, wrap) arrives with the
- * screens. For now this exists so the proxy can be run and tested the way a
- * client will actually invoke it.
+ * The rest of the command set (log, show, approve, report, wrap) arrives with
+ * the audit log and the approve flow. This is the part that puts the screens in
+ * the path of a real session.
  */
 
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { basename, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
+import { PolicyError, parsePolicy, type Policy } from '../policy/index.js';
 import { createProxy } from '../proxy/proxy.js';
 import { spawnUpstream, UpstreamStartError, type Upstream } from '../proxy/upstream.js';
+import { createScreeningGate, type Judgment } from '../screening/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
-  agent-chaperone -- <command> [args...]
+  agent-chaperone [options] -- <command> [args...]
 
 Everything after -- is the upstream MCP server to run. Example:
 
   agent-chaperone -- npx -y @modelcontextprotocol/server-filesystem .
 
-No screening happens yet; traffic is relayed unchanged.`;
+Options:
+  --policy <path>   Policy file. Default: ~/.config/agent-chaperone/policy.yaml
+  --server <name>   Which section of the policy applies. Default: the command name
+
+Screening needs TYPESAFE_API_KEY. Without it the deterministic rules still run,
+which is allow and deny lists, and every judgment says no model was asked.
+The default mode is shadow: everything is screened, nothing is blocked.`;
 
 /** How long an upstream gets to exit on its own after the client disconnects. */
 export const DEFAULT_GRACE_MS = 2000;
@@ -44,17 +55,64 @@ export interface RunOptions {
 export interface ParsedArguments {
   readonly command: string;
   readonly args: readonly string[];
+  readonly policyPath?: string;
+  readonly server?: string;
 }
 
-/** Returns the upstream command, or undefined when the arguments do not name one. */
+/** Returns the upstream command and our own options, or undefined when no command is named. */
 export function parseArguments(argv: readonly string[]): ParsedArguments | undefined {
   const separator = argv.indexOf('--');
+  const ours = separator === -1 ? [] : argv.slice(0, separator);
   const rest = separator === -1 ? [...argv] : argv.slice(separator + 1);
+
+  let policyPath: string | undefined;
+  let server: string | undefined;
+  for (let at = 0; at < ours.length; at += 1) {
+    const flag = ours[at];
+    const value = ours[at + 1];
+    if (flag === '--policy' && value !== undefined) {
+      policyPath = value;
+      at += 1;
+    } else if (flag === '--server' && value !== undefined) {
+      server = value;
+      at += 1;
+    } else {
+      return undefined;
+    }
+  }
+
   const [command, ...args] = rest;
   if (command === undefined || command.length === 0 || command.startsWith('-')) {
     return undefined;
   }
-  return { command, args };
+  return {
+    command,
+    args,
+    ...(policyPath === undefined ? {} : { policyPath }),
+    ...(server === undefined ? {} : { server }),
+  };
+}
+
+export function defaultPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
+  const base = env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config');
+  return join(base, 'agent-chaperone', 'policy.yaml');
+}
+
+/**
+ * The policy, or the defaults when no file has been written yet.
+ *
+ * A file that exists but does not parse stops the session. Running on a policy
+ * nobody could read would mean enforcing something other than what the user
+ * wrote, which is worse than refusing to start.
+ */
+export function loadPolicy(path: string): Policy {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return parsePolicy('');
+  }
+  return parsePolicy(text);
 }
 
 /**
@@ -98,6 +156,16 @@ export async function run(
     return EXIT_USAGE;
   }
 
+  const policyPath = parsed.policyPath ?? defaultPolicyPath();
+  let policy: Policy;
+  try {
+    policy = loadPolicy(policyPath);
+  } catch (error) {
+    const detail = error instanceof PolicyError ? error.message : messageFor(error);
+    io.errorOutput.write(`agent-chaperone: ${policyPath} could not be read: ${detail}\n`);
+    return EXIT_USAGE;
+  }
+
   let upstream: Upstream;
   try {
     upstream = spawnUpstream(parsed.command, parsed.args);
@@ -106,10 +174,31 @@ export async function run(
     return EXIT_CANNOT_START;
   }
 
+  // Said once the session is actually going to happen, so a command that could
+  // not start reports that rather than something about configuration.
+  const server = parsed.server ?? basename(parsed.command);
+  const backend = hasTypeSafeKey() ? createTypeSafeBackend() : undefined;
+  if (backend === undefined) {
+    io.errorOutput.write(
+      'agent-chaperone: TYPESAFE_API_KEY is not set, so only the deterministic rules will run.\n',
+    );
+  }
+
   // A framing failure ends the session. Without this the process would exit
   // zero having silently stopped relaying, which is the worst way for a
   // security tool to fail.
   let chaperoneFault = false;
+  // Until the audit log lands, a judgment goes to stderr as one JSON line. That
+  // is where a client shows server diagnostics, and it keeps shadow mode useful
+  // in the meantime, which is the only mode that ships on by default.
+  const gate = createScreeningGate({
+    policy,
+    server,
+    ...(backend === undefined ? {} : { backend }),
+    onJudgment: (judgment: Judgment) => {
+      io.errorOutput.write(`${JSON.stringify(judgment)}\n`);
+    },
+  });
   const proxy = createProxy(
     {
       clientInput: io.input,
@@ -118,6 +207,7 @@ export async function run(
       upstreamOutput: upstream.stdout,
     },
     {
+      gate,
       onEvent: (event) => {
         if (event.type === 'stream-error') {
           chaperoneFault = true;

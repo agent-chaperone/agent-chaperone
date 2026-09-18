@@ -65,6 +65,8 @@ export interface SeverityAssessment {
 export type CallReason =
   | 'deny-list'
   | 'outside-allow-list'
+  /** The screen could not run, so nothing about this call was judged. */
+  | 'not-screened'
   | 'exfiltration'
   | 'secret-in-arguments'
   | 'destructive'
