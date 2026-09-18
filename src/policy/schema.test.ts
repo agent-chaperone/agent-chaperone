@@ -122,12 +122,28 @@ describe('rejecting a policy that would behave surprisingly', () => {
     ).not.toThrow();
   });
 
+  it('redacts every known kind unless a file narrows it', () => {
+    expect(defaultPolicy().redaction.patterns).toContain('aws_key');
+    expect(parsePolicy('redaction:\n  patterns: [aws_key]\n').redaction.patterns).toEqual([
+      'aws_key',
+    ]);
+  });
+
+  it('rejects a redaction kind it has no pattern for', () => {
+    expect(problems('redaction:\n  patterns: [not_a_kind]\n')[0]).toContain('patterns');
+  });
+
+  it('lets a server be listed with no settings, meaning the defaults', () => {
+    const policy = parsePolicy('servers:\n  github:\n');
+    expect(policyForServer(policy, 'github').screen_calls).toBe(true);
+  });
+
   it('treats a section written but left empty as the defaults', () => {
     // This is what a file looks like when someone comments out its contents.
     const policy = parsePolicy('thresholds:\nservers:\nredaction:\n');
     expect(policy.thresholds.call.hold_destructive).toBe(0.7);
     expect(policy.servers).toEqual({});
-    expect(policy.redaction.patterns).toEqual([]);
+    expect(policy.redaction.patterns.length).toBeGreaterThan(0);
   });
 
   it('never puts a filesystem path in the message', () => {
