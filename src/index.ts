@@ -38,6 +38,8 @@ export type {
   Direction,
   Envelope,
   EnvelopeKind,
+  Gate,
+  GateVerdict,
   JsonRpcId,
   PendingRequest,
   ProxyEvent,
@@ -178,3 +180,27 @@ export type {
   PreCallTool,
   StateHiddenRegion,
 } from './screens/index.js';
+
+export {
+  RESOURCE_READ,
+  TOOL_CALL,
+  annotated,
+  blockedCall,
+  createScreeningGate,
+  heldCall,
+  quarantined,
+  readResultText,
+  readToolCall,
+  toolError,
+  withText,
+} from './screening/index.js';
+export type {
+  BackendUsage,
+  CallJudgment,
+  Judgment,
+  ResultJudgment,
+  ResultShape,
+  ResultText,
+  ScreeningOptions,
+  ToolCall,
+} from './screening/index.js';
