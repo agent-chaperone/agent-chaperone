@@ -18,6 +18,9 @@
     },
     "./package.json": "./package.json"
   },
+  "bin": {
+    "agent-chaperone": "./dist/cli/main.js"
+  },
   "files": [
     "dist",
     "README.md",

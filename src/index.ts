@@ -1,7 +1,36 @@
 /**
  * agent-chaperone public entry point.
  *
- * The package is scaffolded but not implemented yet. See docs/design.md for
- * the architecture and ROADMAP.md for what lands in which version.
+ * Today this exposes the transparent proxy. The screens, the policy engine and
+ * the audit log attach to the proxy's event seam as they land. See
+ * docs/design.md for the architecture and ROADMAP.md for the order.
  */
+
 export const PACKAGE_NAME = 'agent-chaperone';
+
+export {
+  createProxy,
+  spawnUpstream,
+  inspect,
+  RequestCorrelator,
+  LineBuffer,
+  LineTooLongError,
+  UpstreamStartError,
+  DEFAULT_MAX_LINE_BYTES,
+  DEFAULT_MAX_PENDING,
+  DEFAULT_MAX_PENDING_BYTES,
+  frame,
+} from './proxy/index.js';
+export type {
+  CorrelatorOptions,
+  Direction,
+  Envelope,
+  EnvelopeKind,
+  JsonRpcId,
+  PendingRequest,
+  ProxyEvent,
+  ProxyHandle,
+  ProxyOptions,
+  ProxyStreams,
+  Upstream,
+} from './proxy/index.js';

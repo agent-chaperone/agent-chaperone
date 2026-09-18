@@ -16,6 +16,19 @@ export default tseslint.config(
     },
   },
   {
+    // Plain JavaScript fixtures run as Node scripts outside the TypeScript
+    // build, so they need Node's globals declared rather than inferred.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
+  {
     ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**', 'bench/**'],
   },
 );
