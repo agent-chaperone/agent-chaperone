@@ -13,7 +13,9 @@ agent-chaperone is a transparent proxy for the Model Context Protocol. It screen
 ```
 agent-chaperone/
   src/
-    index.ts          Public entry point (placeholder until M1)
+    index.ts          Public entry point
+    proxy/            Transport plumbing, framing, request and response correlation
+    cli/              Command line entry point
   bench/
     src/              Set builders, runner, scorer
     results/          Recorded model responses and reports
@@ -23,18 +25,18 @@ agent-chaperone/
   .github/            CI, release, templates
 ```
 
-Planned layout for `src/` once implementation starts (see `docs/design.md`):
+The rest of `src/` arrives with the milestone that needs it (see `docs/design.md`):
 
 ```
 src/
-  proxy/      transport plumbing, request and response correlation
+  proxy/      transport plumbing, request and response correlation (relay landed, screening pending)
   screens/    precall.ts, postresult.ts, toollist.ts (state builders and batteries)
   rules/      deterministic checks, redaction, hidden-text detection
   policy/     YAML schema, thresholds, pure decision functions
   backends/   typesafe.ts, openrouter.ts, vercel.ts behind one interface
   audit/      JSONL writer, report, replay
   hooks/      adapter for clients whose built-in tools bypass MCP
-  cli/        wrap, log, report, show, approve, task
+  cli/        wrap, log, report, show, approve, task (minimal entry point landed)
 ```
 
 ## Build Commands
@@ -112,6 +114,7 @@ Branches: `feat/<scope>-<description>`, `fix/<scope>-<description>`, `chore/<des
 See [`docs/adr/`](./docs/adr/) and [`docs/design.md`](./docs/design.md). In short:
 
 - Transparent MCP proxy first, hooks adapter for built-in tools (ADR-0001).
+- The relay does its own newline framing instead of using the MCP SDK's stdio transports, because those validate strictly and would refuse messages carrying unknown fields (ADR-0006).
 - Shadow mode by default, fail-open unless strict (ADR-0002).
 - The instruction probability alone gates a result; severity picks annotate versus quarantine (ADR-0003).
 - Benchmarks use public datasets and hand-labeled calls, with raw responses committed and the model version pinned (ADR-0004).

@@ -38,22 +38,25 @@ README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, ROADMAP, this file, and AGENTS.
 
 ## What's In Progress
 
-Nothing. M0 is complete once this scaffold lands on `main` with CI green.
+The transparent proxy, issue #3, awaiting review. It spawns the upstream server over stdio, relays every message in both directions exactly as it arrived, and pairs each response with the request that produced it. No screening yet: `createProxy` takes an `onEvent` callback, and that callback is the seam the screens attach to in #8.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `proxy`: stdio child transport, JSON-RPC passthrough, request and response correlation, fake upstream and fake client test harness.
-2. `policy`: YAML schema, defaults, validation, pure decision functions for both screens.
-3. `rules`: allow and deny lists, dangerous shell patterns, secret redaction, hidden-text detection, block splitting.
-4. `backends`: backend interface, TypeSafe implementation, recorded-response fake for tests.
-5. `screens`: pre-call and post-result state builders and batteries, wired into the proxy.
-6. `audit`: JSONL writer, `log` and `show` commands.
-7. `cli`: hold and approve flow, `approve` command, shadow and enforce modes end to end.
-8. `hooks`: adapter for clients whose built-in tools bypass MCP.
+1. `policy` (#4): YAML schema, defaults, validation, pure decision functions for both screens.
+2. `rules` (#5): allow and deny lists, dangerous shell patterns, secret redaction, hidden-text detection, block splitting.
+3. `backends` (#6): backend interface, TypeSafe implementation, recorded-response fake for tests.
+4. `screens` (#7): pre-call and post-result state builders and batteries.
+5. `proxy` (#8): wire the screens in, with shadow and enforce modes.
+6. `audit` (#9): JSONL writer, `log` and `show` commands.
+7. `cli` (#10): hold and approve flow, `approve` command.
+8. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+9. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
+
+- The MCP SDK's stdio transports cannot be used for the relay. Their framing validates each message against `JSONRPCRequestSchema`, which is strict, so a request carrying an unknown top-level field is rejected outright. The proxy does its own newline framing and relays the original line, which is why a protocol extension survives it. Recorded as [ADR-0006](docs/adr/0006-own-stdio-framing.md).
 
 - Whether the post-result state should include the agent's tool list. The benchmark showed that attacks phrased as polite requests ("please unlock my front door") score low because the model cannot know which tools exist. To be measured in M3 before changing the M1 battery.
 - Where the annotate threshold sits on real traffic. Shadow mode exists to answer this; defaults ship from measured distributions.
@@ -65,11 +68,11 @@ M1, in dependency order:
 | Tooling, CI, templates, docs | done |
 | Design document and ADRs | done |
 | Benchmark harness and results | done |
-| proxy | not started |
+| proxy | relay done (#3), screening pending (#8) |
 | policy | not started |
 | rules | not started |
 | backends | not started |
 | screens | not started |
 | audit | not started |
-| cli | not started |
+| cli | minimal entry point done, commands pending (#10) |
 | hooks | not started |

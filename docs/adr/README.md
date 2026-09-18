@@ -11,6 +11,7 @@ Each ADR documents a significant decision, its context, and its consequences.
 | [ADR-0003](0003-instruction-probability-gates-severity-tiers.md) | The Instruction Probability Gates, Severity Selects the Tier | Accepted |
 | [ADR-0004](0004-benchmark-methodology.md) | Benchmark Methodology and Recorded Responses | Accepted |
 | [ADR-0005](0005-content-leaves-the-machine.md) | Screened Content Leaves the Machine, With Controls | Accepted |
+| [ADR-0006](0006-own-stdio-framing.md) | Own the Stdio Framing Rather Than Using the MCP SDK's Transports | Accepted |
 
 ## Format
 
