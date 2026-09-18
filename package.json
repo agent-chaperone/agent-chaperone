@@ -1,0 +1,57 @@
+{
+  "name": "agent-chaperone",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A calibrated firewall for AI agent tool calls: screens them before they run, and screens tool results before the agent reads them. Covers MCP servers through a proxy and a client's built-in tools through a hooks adapter.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/agent-chaperone/agent-chaperone.git"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "NOTICE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@10.16.1",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "changeset": "changeset",
+    "clean": "rm -rf dist coverage"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.0"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "@eslint/js": "^9.20.0",
+    "@types/node": "^22.0.0",
+    "eslint": "^9.20.0",
+    "prettier": "^3.4.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.24.0",
+    "vitest": "^3.0.0"
+  }
+}
