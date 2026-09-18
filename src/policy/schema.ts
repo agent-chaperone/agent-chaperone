@@ -8,6 +8,7 @@
 
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
+import { SECRET_KINDS } from '../rules/secrets.js';
 
 /** Every threshold in the system is a number in this file and nowhere else. */
 const probability = z.number().min(0).max(1);
@@ -77,11 +78,15 @@ export const policySchema = z.strictObject({
       })
       .prefault({}),
   ),
-  servers: section(z.record(z.string(), serverPolicy).default({})),
+  // The inner section() lets a server be listed with no settings at all, which
+  // means the defaults for it rather than an error.
+  servers: section(z.record(z.string(), section(serverPolicy.prefault({}))).default({})),
   redaction: section(
     z
       .strictObject({
-        patterns: z.array(z.string()).default([]),
+        // Everything, unless a file narrows it. An empty default would mean a
+        // tool that redacts nothing until someone remembers to ask.
+        patterns: z.array(z.enum(SECRET_KINDS)).default([...SECRET_KINDS]),
       })
       .prefault({}),
   ),
