@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/agent-chaperone/agent-chaperone/blob/main/LICENSE)
 
-**Status:** design and benchmark stage. The proxy is not implemented and nothing is published to npm. This page describes what is being built and what has been measured so far.
+**Status:** the proxy screens a real session, and nothing is published to npm yet. What is still missing before a first release is the audit log, the approve flow for a held call, and the adapter for tools that never go through MCP. This page describes what is being built and what has been measured so far.
 
 ## What it does
 
