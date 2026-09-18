@@ -40,25 +40,32 @@ The policy file schema fills in every threshold and rejects what would behave su
 
 Spawns the upstream server over stdio and relays every message in both directions exactly as it arrived, pairing each response with the request that produced it. Nothing is screened: `createProxy` takes an `onEvent` callback, and that callback is the seam the screens attach to in #8.
 
+### Deterministic layer (#5)
+
+Allow and deny matching, dangerous shell forms, secret redaction, hidden-text detection and the block splitter the post-result question needs. It runs before any model request and costs nothing, which is what the tool does when no API key is configured. Not wired to the proxy yet; that is #8.
+
+### Model backends (#6)
+
+One interface for asking a model a battery of typed questions, with the question and answer shapes owned by this package rather than by a vendor, so the backends that land in v0.2.0 fit without changing it. The TypeSafe implementation configures the SDK's retries and `Retry-After` handling and adds a budget for the whole call, because a screen sits in front of a tool call the agent is waiting on. It never throws: a missing key, a rate limit, a timeout and a malformed response all arrive as results the policy can act on, which is what lets shadow and enforce modes differ on what to do when a screen cannot run. Answers are validated against the battery that asked for them before anything reads a number, and nothing a server wrote is copied into a failure message or into a stored model version, because both reach the audit log and the agent can be shown the audit log. Tests run against a fake that replays recordings keyed by a hash of the request and throws on a request it has no recording for.
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
-The deterministic layer, issue #5. Allow and deny matching, dangerous shell forms, secret redaction, hidden-text detection and the block splitter the post-result question needs. It runs before any model request and costs nothing, which is what the tool does when no API key is configured. Not wired to the proxy yet; that is #8.
+Nothing in flight. Everything M1 needs before the screens is in place: the rules, the policy, the relay and the backend.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `backends` (#6): backend interface, TypeSafe implementation, recorded-response fake for tests.
-2. `screens` (#7): pre-call and post-result state builders and batteries.
-3. `proxy` (#8): wire the screens in, with shadow and enforce modes.
-4. `audit` (#9): JSONL writer, `log` and `show` commands.
-5. `cli` (#10): hold and approve flow, `approve` command.
-6. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-7. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `screens` (#7): pre-call and post-result state builders and batteries.
+2. `proxy` (#8): wire the screens in, with shadow and enforce modes.
+3. `audit` (#9): JSONL writer, `log` and `show` commands.
+4. `cli` (#10): hold and approve flow, `approve` command.
+5. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+6. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
@@ -77,7 +84,7 @@ M1, in dependency order:
 | proxy | relay done (#3), screening pending (#8) |
 | policy | schema and decision functions done (#4), not yet consulted (#8) |
 | rules | done (#5), not yet consulted (#8) |
-| backends | not started |
+| backends | done (#6), not yet consulted (#8) |
 | screens | not started |
 | audit | not started |
 | cli | minimal entry point done, commands pending (#10) |

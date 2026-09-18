@@ -76,6 +76,8 @@ Failure handling, per mode:
 - `strict`: hold everything on backend failure.
 - Upstream crash: propagate the error to the client as the upstream would have.
 
+A screen is bounded as a whole rather than per attempt: the request, its retries and their backoff share one budget, because a tool call is waiting on the answer for as long as it runs. Exhausting that budget is a timeout and is handled by the rows above. A client that goes away while a screen is in flight cancels it instead, which is not a backend failure and is not recorded as one.
+
 ### Hooks adapter
 
 Some clients run their own built-in tools (shell, file edits, web fetch) outside MCP. A proxy never sees those. The hooks adapter exposes the same two screens as commands a client's pre-tool and post-tool hooks can call, reading the tool name, arguments, or result from stdin and returning the decision in the shape the client expects. Same policy file, same audit log.

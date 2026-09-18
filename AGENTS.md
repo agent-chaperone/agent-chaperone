@@ -21,7 +21,7 @@ agent-chaperone/
     screens/     State builders and question batteries              (#7)
     rules/       Deterministic checks, redaction, hidden text
     policy/      Schema, thresholds, pure decision functions
-    backends/    Model backend interface and implementations         (#6)
+    backends/    Model backend interface and implementations
     audit/       JSONL writer, report, replay                        (#9)
     hooks/       Adapter for a client's built-in tools               (#11)
   bench/
@@ -34,8 +34,9 @@ agent-chaperone/
 ```
 
 Directories marked with an issue number do not exist yet and arrive with that
-piece of work. The relay in `proxy/` has landed; the screening that attaches to
-it has not. `cli/` is a minimal entry point, not the full command set.
+piece of work. The relay in `proxy/` has landed and the backend it will ask has
+landed; the screening that joins them has not. `cli/` is a minimal entry point,
+not the full command set.
 
 ## Build Commands
 
@@ -71,7 +72,8 @@ bash fetch.sh                      # download public datasets
 ## Testing Conventions
 
 - Vitest. `*.test.ts` next to the code it tests.
-- No test calls the TypeSafe API. Model responses are recorded fixtures.
+- No test calls the TypeSafe API and no test reaches the network. Model answers come from the fake in `backends/fake.ts`, which replays recordings keyed by a hash of the request. The TypeSafe adapter's own tests drive it through an injected transport.
+- The API key is read from `TYPESAFE_API_KEY` by the SDK and by nothing else in this package. Tests set it to an obvious placeholder.
 - Proxy paths are tested against a fake upstream server and a fake client.
 - Decision functions are pure and tested exhaustively on answer and policy combinations.
 
