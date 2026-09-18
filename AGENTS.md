@@ -2,7 +2,7 @@
 
 > Repository guide for coding agents and new contributors. Tool-neutral. Point your agent here to get productive quickly.
 >
-> This is the only file of its kind. `CLAUDE.md` imports it rather than repeating it, because Claude Code reads that name and not this one.
+> This is the only guidance file in the repository. Do not add a second one under another name: point the tool at this one instead.
 
 ## Project Overview
 
