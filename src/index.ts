@@ -204,3 +204,29 @@ export type {
   ScreeningOptions,
   ToolCall,
 } from './screening/index.js';
+
+export {
+  DIRECTORY_MODE,
+  FILE_MODE,
+  PRICE_PER_MTOK,
+  costOf,
+  createAuditLog,
+  currentSession,
+  findRecord,
+  formatRecord,
+  parseRecords,
+  readRecords,
+  sessionFileName,
+  sessionFiles,
+  sessionPath,
+  sessionsDirectory,
+  stateDirectory,
+  toRecord,
+} from './audit/index.js';
+export type {
+  AuditContent,
+  AuditLog,
+  AuditLogOptions,
+  AuditRecord,
+  RecordOptions,
+} from './audit/index.js';

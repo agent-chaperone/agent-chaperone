@@ -261,14 +261,16 @@ One JSONL file per session in the state directory, one line per screened message
  "rules": [], "decision": "forward", "mode": "shadow"}
 ```
 
-- `agent-chaperone log` tails the current session, one colored line per decision.
+- `agent-chaperone log` prints what has been decided, one line each, and `--follow` keeps printing. It reads every session rather than one: a client normally wraps several servers, each its own process with its own session file, so reading one of them would hide the rest.
 - `agent-chaperone report` summarizes a period: messages screened, holds, quarantines, cost, latency percentiles, and the distribution of each probability, so users can see where their thresholds sit on their traffic.
 - `agent-chaperone show <id>` prints a quarantined result.
 - `agent-chaperone approve <id>` releases a held call once.
 - `agent-chaperone replay --policy <file>` re-applies a policy to recorded judgments.
 - `agent-chaperone task "<text>"` records the current task for the off-task question.
 
-Arguments and results are stored locally with the same redaction applied before they went to the backend. `--no-store-content` keeps only the judgments.
+Arguments and results are stored locally with the same redaction applied before they went to the backend. `--no-store-content` keeps only the judgments. A result carrying more secret shapes than one scan will match is not stored at all, because past that point nothing knows which ones were left in.
+
+The file and its directory are created for the owner alone. A log that cannot be written says so once and stops trying: a firewall that refuses to relay because its disk filled up has turned a full disk into an outage.
 
 ## 8. Privacy and data flow
 

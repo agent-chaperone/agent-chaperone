@@ -23,7 +23,7 @@ agent-chaperone/
     rules/       Deterministic checks, redaction, hidden text
     policy/      Schema, thresholds, pure decision functions
     backends/    Model backend interface and implementations
-    audit/       JSONL writer, report, replay                        (#9)
+    audit/       JSONL writer, and the commands that read it
     hooks/       Adapter for a client's built-in tools               (#11)
   bench/
     src/         Set builders, runner, scorer
@@ -35,10 +35,10 @@ agent-chaperone/
 ```
 
 Directories marked with an issue number do not exist yet and arrive with that
-piece of work. Traffic is screened end to end: `cli/` wraps a server, and
-`screening/` decides what the relay does with each message. What is missing is
-where judgments go, which is the audit log, and the approve flow that makes a
-held call resumable.
+piece of work. Traffic is screened end to end and every decision is recorded: `cli/` wraps a
+server, `screening/` decides what the relay does with each message, and `audit/`
+writes one line per decision. What is missing is the approve flow that makes a
+held call resumable, and the tools that never go through MCP.
 
 ## Build Commands
 
@@ -76,6 +76,7 @@ bash fetch.sh                      # download public datasets
 - Vitest. `*.test.ts` next to the code it tests.
 - No test calls the TypeSafe API and no test reaches the network. Model answers come from the fake in `backends/fake.ts`, which replays recordings keyed by a hash of the request. The TypeSafe adapter's own tests drive it through an injected transport.
 - The API key is read from `TYPESAFE_API_KEY` by the SDK and by nothing else in this package. Tests set it to an obvious placeholder.
+- No test may write to the developer's own state directory. The CLI tests point `XDG_STATE_HOME` at a temporary one, because running the suite should not leave an audit trail of it.
 - Proxy paths are tested against a fake upstream server and a fake client. The gate is tested through a real `createProxy` rather than by calling it directly, so ordering, flow control and shutdown are covered by the same tests that cover the decisions.
 - Decision functions are pure and tested exhaustively on answer and policy combinations.
 

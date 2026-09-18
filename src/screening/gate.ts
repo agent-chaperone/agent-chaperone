@@ -15,6 +15,7 @@
  * everything, records every judgment, and applies nothing.
  */
 
+import { randomBytes } from 'node:crypto';
 import type { Backend, BackendFailure, BackendResult, Battery } from '../backends/index.js';
 import type {
   CallAction,
@@ -26,9 +27,10 @@ import type {
   ResultAnswers,
   ResultRuleFindings,
 } from '../policy/index.js';
+import { sanitizeMessage } from '../backends/index.js';
 import { decidePostResult, decidePreCall, policyForServer, shouldScreen } from '../policy/index.js';
 import type { Envelope, Gate, GateVerdict, PendingRequest } from '../proxy/index.js';
-import { inspectResult, inspectToolCall } from '../rules/index.js';
+import { MAX_MATCHES, inspectResult, inspectToolCall } from '../rules/index.js';
 import {
   buildPostResultScreens,
   buildPreCallScreen,
@@ -107,6 +109,8 @@ export interface CallJudgment {
   readonly answers: CallAnswers;
   readonly rules: CallRuleFindings;
   readonly secrets: readonly string[];
+  /** The arguments as they went to the model, which is to say already redacted. */
+  readonly arguments: unknown;
   readonly usage?: BackendUsage;
   readonly failure?: BackendFailure;
   readonly id: string;
@@ -137,6 +141,8 @@ export interface ResultJudgment {
   };
   /** Concealment found anywhere in the result, including in text no block holds. */
   readonly hidden: readonly string[];
+  /** The result text as it went to the model, which is to say already redacted. */
+  readonly text: string;
   readonly usage?: BackendUsage;
   readonly failure?: BackendFailure;
   readonly id: string;
@@ -162,12 +168,15 @@ export interface ScreeningOptions {
   readonly newId?: () => string;
 }
 
-let counter = 0;
-
-/** Short, unique within a session, and easy to retype off a terminal. */
+/**
+ * Short enough to retype off a terminal, and unique across processes.
+ *
+ * A counter would collide between the several servers a client wraps at once,
+ * and `show` searches every session for the id it was given, so two decisions
+ * sharing one would hand the user whichever was found first.
+ */
 function defaultId(): string {
-  counter += 1;
-  return `${counter.toString(36).padStart(2, '0')}${Math.floor(performance.now()).toString(36)}`;
+  return randomBytes(5).toString('hex');
 }
 
 /**
@@ -275,7 +284,6 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     let screened = false;
 
     if (!settled && backend !== undefined) {
-      screened = true;
       const screen = buildPreCallScreen({
         tool: { name: call.name },
         redacted_arguments: rules.redacted_arguments,
@@ -284,6 +292,9 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       });
       const asked = await ask(() => backend.ask(screen.state, screen.battery));
       if (asked.ok) {
+        // Answered, not merely attempted. A screen that failed must not read as
+        // a decision a model took part in.
+        screened = true;
         answers = readCallAnswers(asked.answers);
         usage = {
           model: asked.model,
@@ -311,7 +322,9 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     report({
       side: 'call',
       screened,
-      tool: call.name,
+      // The name came off the wire. It reaches the audit log and from there a
+      // terminal, so a server cannot use it to forge a line or move a cursor.
+      tool: sanitizeMessage(call.name),
       server,
       mode: policy.mode,
       intended: decision.intended,
@@ -319,6 +332,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       answers,
       rules: findings,
       secrets: rules.secrets,
+      arguments: rules.redacted_arguments,
       ...(usage === undefined ? {} : { usage }),
       ...(failure === undefined ? {} : { failure }),
       id,
@@ -376,7 +390,6 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     let screened = false;
 
     if (screens.length > 0 && backend !== undefined) {
-      screened = true;
       const model = backend;
       // Chunks of one result are independent questions about the same text, so
       // they go out together rather than one after another.
@@ -389,6 +402,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
         failure = firstFailure.failure;
       }
       if (answered.length > 0) {
+        screened = true;
         answers = mergeResultAnswers(
           answered.map((one) => (one.ok ? readResultAnswers(one.answers) : {})),
         );
@@ -431,7 +445,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     report({
       side: 'result',
       screened,
-      tool,
+      tool: sanitizeMessage(tool),
       server,
       mode: policy.mode,
       intended,
@@ -446,6 +460,13 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
         parts: body.unreadable,
       },
       hidden: inspection.hidden_kinds,
+      // At the cap the redaction stopped looking, so later secret shapes are
+      // still in the text. The audit log must not hold a credential the request
+      // did not carry, and nothing here can say which ones survived.
+      text:
+        inspection.secrets.length >= MAX_MATCHES
+          ? '[content not stored: too many secret shapes to redact them all]'
+          : inspection.redacted_text,
       ...(usage === undefined ? {} : { usage }),
       ...(failure === undefined ? {} : { failure }),
       id,
