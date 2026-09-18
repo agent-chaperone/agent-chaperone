@@ -48,28 +48,35 @@ Allow and deny matching, dangerous shell forms, secret redaction, hidden-text de
 
 One interface for asking a model a battery of typed questions, with the question and answer shapes owned by this package rather than by a vendor, so the backends that land in v0.2.0 fit without changing it. The TypeSafe implementation configures the SDK's retries and `Retry-After` handling and adds a budget for the whole call, because a screen sits in front of a tool call the agent is waiting on. It never throws: a missing key, a rate limit, a timeout and a malformed response all arrive as results the policy can act on, which is what lets shadow and enforce modes differ on what to do when a screen cannot run. Answers are validated against the battery that asked for them before anything reads a number, and nothing a server wrote is copied into a failure message or into a stored model version, because both reach the audit log and the agent can be shown the audit log. Tests run against a fake that replays recordings keyed by a hash of the request and throws on a request it has no recording for.
 
+### Screens (#7)
+
+A tool call and a tool result turned into the exact request the harness sent, and the answers read back into the shape the decision rules take. The question wording lives in one file, one constant per question, transcribed from `bench/src/run.py`; a test reads that file and asserts each shipped string still appears in it, so the claim that the wording is the measured wording is checked rather than promised. With a tool and arguments and nothing else, the pre-call state is field for field what the benchmark sent. A policy, a task or the server's annotations are additions to that request, and the questions naming them are added with them. Results larger than one request are chunked with the block numbering of the whole result preserved, and the verdict is the maximum across chunks so a long benign document cannot bury one injected paragraph. Fixtures are real recorded answers from the run the README quotes, and a test checks each one back against the row it names in `bench/results/cache.jsonl`.
+
+The harness now sends the batteries the tool sends, so the README's numbers describe the shipping request rather than a subset of it. Re-running it moved the numbers very little: AUC is unchanged on all four sets, recall on InjecAgent went up slightly and on BIPIA down slightly, and the benign documentation set gained one false positive at 0.5. The two questions that ship only with a policy or a task are still unmeasured.
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
-Nothing in flight. Everything M1 needs before the screens is in place: the rules, the policy, the relay and the backend.
+Nothing in flight. Every piece the proxy needs now exists; what is left is putting them in the path of a tool call.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `screens` (#7): pre-call and post-result state builders and batteries.
-2. `proxy` (#8): wire the screens in, with shadow and enforce modes.
-3. `audit` (#9): JSONL writer, `log` and `show` commands.
-4. `cli` (#10): hold and approve flow, `approve` command.
-5. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-6. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `proxy` (#8): wire the screens in, with shadow and enforce modes.
+2. `audit` (#9): JSONL writer, `log` and `show` commands.
+3. `cli` (#10): hold and approve flow, `approve` command.
+4. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+5. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
 - The MCP SDK's stdio transports cannot be used for the relay. Their framing validates each message against `JSONRPCRequestSchema`, which is strict, so a request carrying an unknown top-level field is rejected outright. The proxy does its own newline framing and relays the original line, which is why a protocol extension survives it. Recorded as [ADR-0006](docs/adr/0006-own-stdio-framing.md).
+
+- `policy_violation` and `off_task` are unmeasured. They are asked only when a policy or a task is configured, and no benchmark row carries either, so measuring them needs labeled policies and tasks that do not exist yet.
 
 - Whether the post-result state should include the agent's tool list. The benchmark showed that attacks phrased as polite requests ("please unlock my front door") score low because the model cannot know which tools exist. To be measured in M3 before changing the M1 battery.
 - Where the annotate threshold sits on real traffic. Shadow mode exists to answer this; defaults ship from measured distributions.
@@ -85,7 +92,7 @@ M1, in dependency order:
 | policy | schema and decision functions done (#4), not yet consulted (#8) |
 | rules | done (#5), not yet consulted (#8) |
 | backends | done (#6), not yet consulted (#8) |
-| screens | not started |
+| screens | done (#7), not yet consulted (#8) |
 | audit | not started |
 | cli | minimal entry point done, commands pending (#10) |
 | hooks | not started |
