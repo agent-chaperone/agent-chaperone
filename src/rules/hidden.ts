@@ -33,12 +33,15 @@ interface Detector {
 const BASE64_RUN_MINIMUM = 160;
 
 /**
- * An upper bound on one run, as well as a lower one. An unbounded `{160,}`
- * against ten megabytes of base64 exhausts the regular expression engine's own
- * stack and throws, so a long payload is reported as several adjacent runs
- * instead of one impossible match.
+ * Every run is bounded above as well as below.
+ *
+ * An unbounded quantifier over ten megabytes of one repeated character
+ * exhausts the regular expression engine's own stack and throws, and how much
+ * it takes depends on the machine: a run of invisible characters passed here
+ * and crashed on a smaller CI runner. A long payload is reported as several
+ * adjacent runs instead of one impossible match, which is the same finding.
  */
-const BASE64_RUN_MAXIMUM = 4096;
+const RUN_MAXIMUM = 4096;
 
 /** A hostile result cannot make this report more than a bounded number of findings. */
 export const MAX_HIDDEN_REGIONS = 5000;
@@ -52,8 +55,14 @@ const DETECTORS: readonly Detector[] = [
   // right marks U+200E and U+200F are excluded: they appear in ordinary
   // right-to-left text and flagging them would report every Arabic or Hebrew
   // document as concealing something.
-  { kind: 'zero_width', pattern: /[\u200B-\u200D\u2060-\u2064]+/gu },
-  { kind: 'bidi_control', pattern: /[\u202A-\u202E\u2066-\u2069]+/gu },
+  {
+    kind: 'zero_width',
+    pattern: new RegExp(`[\\u200B-\\u200D\\u2060-\\u2064]{1,${RUN_MAXIMUM}}`, 'gu'),
+  },
+  {
+    kind: 'bidi_control',
+    pattern: new RegExp(`[\\u202A-\\u202E\\u2066-\\u2069]{1,${RUN_MAXIMUM}}`, 'gu'),
+  },
   {
     kind: 'hidden_style',
     // The size and opacity forms end on a digit boundary rather than \b, which
@@ -63,9 +72,9 @@ const DETECTORS: readonly Detector[] = [
   },
   {
     kind: 'base64_run',
-    pattern: new RegExp(`[A-Za-z0-9+/]{${BASE64_RUN_MINIMUM},${BASE64_RUN_MAXIMUM}}={0,2}`, 'gu'),
+    pattern: new RegExp(`[A-Za-z0-9+/]{${BASE64_RUN_MINIMUM},${RUN_MAXIMUM}}={0,2}`, 'gu'),
   },
-  { kind: 'private_use', pattern: /[\uE000-\uF8FF]+/gu },
+  { kind: 'private_use', pattern: new RegExp(`[\\uE000-\\uF8FF]{1,${RUN_MAXIMUM}}`, 'gu') },
   // Tag characters render as nothing anywhere and exist only to carry data.
   // They live outside the basic plane, which is why the `u` flag matters.
   { kind: 'tag_characters', pattern: /[\u{E0000}-\u{E007F}]+/gu },
