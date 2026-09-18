@@ -22,6 +22,6 @@ Closes #
 - [ ] No secrets, API keys, or personal data in committed files
 - [ ] Untrusted-input handling reviewed (tool arguments, tool results, policy files, config)
 
-## Notes for Reviewer
+## Notes
 
-<!-- Anything the reviewer should look at closely -->
+<!-- What is not obvious from the diff -->

@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from run import CACHE, SETS, battery_for, req_key  # noqa: E402
+from run import CACHE, LEGACY_RESULT_BATTERY, SETS, battery_for, req_key  # noqa: E402
 from score import auc, pr  # noqa: E402
 
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -28,6 +28,10 @@ def main():
             if not c or "error" in c or r["meta"].get("ambiguous"):
                 continue
             r["a"] = c["answers"]
+            # demands_action is no longer sent. Its answers live under the first
+            # run's request hash, and this is the only cut that still needs them.
+            legacy = cache.get(req_key(r["state"], LEGACY_RESULT_BATTERY))
+            r["legacy"] = legacy["answers"] if legacy and "error" not in legacy else None
             rows.append(r)
     post = [r for r in rows if r["dataset"] in ("injecagent", "bipia_email", "discusses")]
 
@@ -36,14 +40,20 @@ def main():
         if k == "instructs":
             return a["instructs_reader"]["noul"]
         if k == "demands":
-            return a["demands_action"]["noul"]
+            return r["legacy"]["demands_action"]["noul"]
         if k == "max":
-            return max(a["instructs_reader"]["noul"], a["demands_action"]["noul"])
+            return max(a["instructs_reader"]["noul"], r["legacy"]["demands_action"]["noul"])
         return a["severity"]["score"] / 3
 
     print("== post-result sets combined (injecagent + bipia + discusses): AUC per signal")
-    for k in ("instructs", "demands", "max", "sev"):
-        print(f"  {k:10s} AUC {auc([(sig(r, k), r['label']) for r in post]):.3f}")
+    print("   instructs and sev from the current batteries; demands and max from the first run,")
+    print("   which is the comparison that retired demands_action.")
+    legacy_post = [r for r in post if r["legacy"] and "demands_action" in r["legacy"]]
+    for k in ("instructs", "sev"):
+        print(f"  {k:10s} AUC {auc([(sig(r, k), r['label']) for r in post]):.3f}  n={len(post)}")
+    for k in ("demands", "max"):
+        if legacy_post:
+            print(f"  {k:10s} AUC {auc([(sig(r, k), r['label']) for r in legacy_post]):.3f}  n={len(legacy_post)}")
 
     print("\n== instructs_reader at low thresholds")
     print(f"{'dataset':12s} {'thr':>4s} {'prec':>6s} {'rec':>6s} {'FP':>4s} {'FN':>4s}")

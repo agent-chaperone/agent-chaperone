@@ -18,7 +18,7 @@ agent-chaperone/
     index.ts     Public entry point
     proxy/       Transport plumbing, framing, request and response correlation
     cli/         Command line entry point
-    screens/     State builders and question batteries              (#7)
+    screens/     State builders and question batteries
     rules/       Deterministic checks, redaction, hidden text
     policy/      Schema, thresholds, pure decision functions
     backends/    Model backend interface and implementations
@@ -34,9 +34,10 @@ agent-chaperone/
 ```
 
 Directories marked with an issue number do not exist yet and arrive with that
-piece of work. The relay in `proxy/` has landed and the backend it will ask has
-landed; the screening that joins them has not. `cli/` is a minimal entry point,
-not the full command set.
+piece of work. The relay in `proxy/` has landed, along with the backend it asks
+and the requests it sends; what has not landed is the wiring that puts them in
+the path of a tool call. `cli/` is a minimal entry point, not the full command
+set.
 
 ## Build Commands
 
@@ -109,7 +110,8 @@ Branches: `feat/<scope>-<description>`, `fix/<scope>-<description>`, `chore/<des
 - Prettier: single quotes, trailing commas, 100 columns.
 - ESLint: `typescript-eslint` strict and stylistic.
 - `import type` for type-only imports.
-- Decision functions are pure: answers and policy in, an action out. Side effects live in the proxy and audit layers. Keep model questions in one place per screen so a wording change is a reviewable diff, and re-measure it with the harness in `bench/` before it ships. The numbers in the README came from the exact wording in `docs/design.md`.
+- Decision functions are pure: answers and policy in, an action out. Side effects live in the proxy and audit layers.
+- Model questions live in `src/screens/questions.ts`, one constant per question, so a wording change is a one-file diff. Each question is asserted whole against a literal in `questions.test.ts`, and those literals are checked back against `bench/src/run.py`, so the shipped wording, the test and the harness have to agree. Changing one means re-running the harness and updating the README's numbers with the new date. Adding a question to a battery makes a different request, so it is the same kind of change.
 
 ## Security Constraints
 

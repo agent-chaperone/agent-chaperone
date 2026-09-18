@@ -45,16 +45,18 @@ Wrapping a server is one change to the client's MCP configuration:
 
 ## Measured so far
 
-The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-18, one request per item. The full run was 1,942 requests and cost $0.062 at the published price.
+The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-19, one request per item. The batteries sent were the ones the tool sends, question for question. The full run is 1,942 requests and costs $0.061 at the published price.
 
 | Set | Items | Positives | AUC | Precision / recall at 0.5 | at 0.3 |
 | --- | ---: | ---: | ---: | --- | --- |
-| InjecAgent tool responses | 1,394 | 1,054 | 0.976 | 0.989 / 0.798 | 0.955 / 0.950 |
-| BIPIA email | 250 | 200 | 1.000 | 1.000 / 0.830 | 1.000 / 0.860 |
-| Discusses injection, benign | 63 | 0 | n/a | 6 false positives | 9 false positives |
-| Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.926 / 0.980 |
+| InjecAgent tool responses | 1,394 | 1,054 | 0.976 | 0.989 / 0.805 | 0.956 / 0.949 |
+| BIPIA email | 250 | 200 | 1.000 | 1.000 / 0.825 | 1.000 / 0.850 |
+| Discusses injection, benign | 63 | 0 | n/a | 7 false positives | 10 false positives |
+| Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.909 / 0.980 |
 
-Latency from a laptop was 412 ms median and 682 ms at the 95th percentile, with 760 input tokens per request on average.
+Latency from a laptop was 405 ms median and 876 ms at the 95th percentile, with 753 input tokens per request on average.
+
+Two questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either, so nothing above measures them.
 
 The hand-labeled set leans toward the built-in tool case on purpose: 44 of the 100 scored calls are shell commands, and 26 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
 
