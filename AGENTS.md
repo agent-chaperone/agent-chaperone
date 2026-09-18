@@ -1,6 +1,8 @@
 # AGENTS.md
 
 > Repository guide for coding agents and new contributors. Tool-neutral. Point your agent here to get productive quickly.
+>
+> This is the only file of its kind. `CLAUDE.md` imports it rather than repeating it, because Claude Code reads that name and not this one.
 
 ## Project Overview
 
@@ -13,31 +15,27 @@ agent-chaperone is a transparent proxy for the Model Context Protocol. It screen
 ```
 agent-chaperone/
   src/
-    index.ts          Public entry point
-    proxy/            Transport plumbing, framing, request and response correlation
-    cli/              Command line entry point
+    index.ts     Public entry point
+    proxy/       Transport plumbing, framing, request and response correlation
+    cli/         Command line entry point
+    screens/     State builders and question batteries              (#7)
+    rules/       Deterministic checks, redaction, hidden text        (#5)
+    policy/      Schema, thresholds, pure decision functions         (#4)
+    backends/    Model backend interface and implementations         (#6)
+    audit/       JSONL writer, report, replay                        (#9)
+    hooks/       Adapter for a client's built-in tools               (#11)
   bench/
-    src/              Set builders, runner, scorer
-    results/          Recorded model responses and reports
+    src/         Set builders, runner, scorer
+    results/     Recorded model responses and reports
   docs/
-    design.md         Architecture, screens, policy, audit, privacy
-    adr/              Architecture decision records
-  .github/            CI, release, templates
+    design.md    Architecture, screens, policy, audit, privacy
+    adr/         Architecture decision records
+  .github/       CI, release, templates
 ```
 
-The rest of `src/` arrives with the milestone that needs it (see `docs/design.md`):
-
-```
-src/
-  proxy/      transport plumbing, request and response correlation (relay landed, screening pending)
-  screens/    precall.ts, postresult.ts, toollist.ts (state builders and batteries)
-  rules/      deterministic checks, redaction, hidden-text detection
-  policy/     YAML schema, thresholds, pure decision functions
-  backends/   typesafe.ts, openrouter.ts, vercel.ts behind one interface
-  audit/      JSONL writer, report, replay
-  hooks/      adapter for clients whose built-in tools bypass MCP
-  cli/        wrap, log, report, show, approve, task (minimal entry point landed)
-```
+Directories marked with an issue number do not exist yet and arrive with that
+piece of work. The relay in `proxy/` has landed; the screening that attaches to
+it has not. `cli/` is a minimal entry point, not the full command set.
 
 ## Build Commands
 
@@ -51,6 +49,14 @@ pnpm format           # Prettier, write
 pnpm format:check     # Prettier, check only
 pnpm changeset        # Add a changeset for release
 ```
+
+Before opening a pull request, run them in the order CI runs them:
+
+```bash
+pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test
+```
+
+CI stops at the first failure, so a formatting problem hides every result after it. `pnpm format:check` only reports; `pnpm format` applies the fixes.
 
 Benchmark:
 
@@ -87,7 +93,9 @@ Branches: `feat/<scope>-<description>`, `fix/<scope>-<description>`, `chore/<des
 
 ## PR Conventions
 
+- Work from an issue and a feature branch. Never commit to `main`, not for a one-line fix and not for docs.
 - One concern per PR. Code, tests, docs, config, and changeset together.
+- Stage files by explicit path rather than with `git add -A`, so unrelated work in the tree cannot ride along. `bench/.env`, `bench/data/` and `bench/.venv/` are ignored and stay that way.
 - Tests required for the behavior introduced.
 - Changeset required when published package behavior changes.
 - `CURRENT_STATE.md` updated inside the PR. `AGENTS.md` updated if the architecture or build commands change.
@@ -99,7 +107,7 @@ Branches: `feat/<scope>-<description>`, `fix/<scope>-<description>`, `chore/<des
 - Prettier: single quotes, trailing commas, 100 columns.
 - ESLint: `typescript-eslint` strict and stylistic.
 - `import type` for type-only imports.
-- Keep policy decisions in pure functions. Keep model questions in one place per screen so wording changes are reviewable diffs.
+- Decision functions are pure: answers and policy in, an action out. Side effects live in the proxy and audit layers. Keep model questions in one place per screen so a wording change is a reviewable diff, and re-measure it with the harness in `bench/` before it ships. The numbers in the README came from the exact wording in `docs/design.md`.
 
 ## Security Constraints
 
@@ -120,6 +128,13 @@ See [`docs/adr/`](./docs/adr/) and [`docs/design.md`](./docs/design.md). In shor
 - Benchmarks use public datasets and hand-labeled calls, with raw responses committed and the model version pinned (ADR-0004).
 - Screened content leaves the machine; redaction, per-server opt-out, and size caps limit what does (ADR-0005).
 
-## Current Status
+## Where to Look
 
-See [`CURRENT_STATE.md`](./CURRENT_STATE.md).
+| Question | File |
+| --- | --- |
+| What is built, what is next | [`CURRENT_STATE.md`](./CURRENT_STATE.md) |
+| How the proxy, screens, policy and audit log fit together | [`docs/design.md`](./docs/design.md) |
+| Why the design is the way it is | [`docs/adr/`](./docs/adr/) |
+| How the numbers were measured, and how to reproduce them without a key | [`bench/README.md`](./bench/README.md) |
+| Setup and the contribution workflow | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
+| What lands in which version | [`ROADMAP.md`](./ROADMAP.md) |
