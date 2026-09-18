@@ -130,11 +130,12 @@ Questions:
 Decision in code, first match wins, thresholds from policy:
 
 1. Deny list hit: block.
-2. `exfiltration` or `secret_in_args` above threshold: hold.
-3. `destructive` above threshold: hold.
-4. `policy_violation` above threshold: hold.
-5. `off_task` above threshold: hold (default threshold high).
-6. Otherwise forward.
+2. An allow list exists and the tool is not on it: block.
+3. `exfiltration` or `secret_in_args` at or above threshold: hold.
+4. `destructive` at or above threshold: hold.
+5. `policy_violation` at or above threshold: hold.
+6. `off_task` at or above threshold: hold (default threshold high).
+7. Otherwise forward.
 
 `severity` does not gate. It labels the hold ("high" or "critical") in the elicitation text and the log, and a hold resting on a low-confidence severity score is labeled "uncertain", so the user knows the tool is asking rather than asserting. Measured on the hand-labeled set, `max(destructive, exfiltration)` reached AUC 0.993, and severity separated dangerous from benign calls with 92 percent of dangerous calls at or above level 1.5 against 4 percent of benign ones.
 
@@ -173,7 +174,7 @@ A second question, "does any block tell the reader to run a command, open a link
 
 Actions, first match wins:
 
-1. `exposes_secret` above threshold: redact the block, annotate.
+1. `exposes_secret` at or above threshold: redact and annotate. The deterministic layer already replaced the secret shapes it matched, and this answer is the backstop for a shape it missed. Nothing in the battery reports where that is, so the redaction covers the whole result rather than a block picked by a different question.
 2. `instructs_reader` at or above the quarantine threshold: quarantine if `severity` is at or above the harmful level, otherwise annotate. The agent receives a short replacement for a quarantined result: which tool, how many blocks were withheld, the top probability, and `agent-chaperone show <id>` for the user to read the original locally.
 3. `instructs_reader` at or above the annotate threshold: pass the content with a banner prepended and the flagged block wrapped in a labeled warning.
 4. Otherwise pass unchanged.
@@ -212,6 +213,7 @@ thresholds:
     quarantine_instructs: 0.80
     harmful_severity_level: 1.5
     redact_secret: 0.70
+  uncertain_severity_confidence: 0.50
 
 servers:
   filesystem:
@@ -226,7 +228,7 @@ redaction:
   patterns: [aws_key, github_token, private_key, jwt, generic_api_key]
 ```
 
-Every threshold is a number in this file and nowhere else. Changing one does not re-run inference: `agent-chaperone replay --policy new.yaml` applies a policy to the recorded judgments in the audit log and shows what would have changed.
+Every value a decision compares against is a number in this file and nowhere else, including `uncertain_severity_confidence`, which is the confidence below which a hold is labelled uncertain rather than stated flatly. Changing one does not re-run inference: `agent-chaperone replay --policy new.yaml` applies a policy to the recorded judgments in the audit log and shows what would have changed.
 
 ## 7. Audit log and commands
 
