@@ -12,6 +12,14 @@ import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import {
+  createAuditLog,
+  findRecord,
+  followRecords,
+  formatRecord,
+  recentRecords,
+} from '../audit/index.js';
+import { sanitizeMessage } from '../backends/index.js';
 import { createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
 import { PolicyError, parsePolicy, type Policy } from '../policy/index.js';
 import { createProxy } from '../proxy/proxy.js';
@@ -20,15 +28,18 @@ import { createScreeningGate, type Judgment } from '../screening/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
-  agent-chaperone [options] -- <command> [args...]
+  agent-chaperone [options] -- <command> [args...]   Wrap and screen a server
+  agent-chaperone log [--follow]                     Read this session's decisions
+  agent-chaperone show <id>                          Print what was held or withheld
 
 Everything after -- is the upstream MCP server to run. Example:
 
   agent-chaperone -- npx -y @modelcontextprotocol/server-filesystem .
 
 Options:
-  --policy <path>   Policy file. Default: ~/.config/agent-chaperone/policy.yaml
-  --server <name>   Which section of the policy applies. Default: the command name
+  --policy <path>       Policy file. Default: ~/.config/agent-chaperone/policy.yaml
+  --server <name>       Which section of the policy applies. Default: the command name
+  --no-store-content    Record the judgments and not the arguments or results
 
 Screening needs TYPESAFE_API_KEY. Without it the deterministic rules still run,
 which is allow and deny lists, and every judgment says no model was asked.
@@ -57,6 +68,34 @@ export interface ParsedArguments {
   readonly args: readonly string[];
   readonly policyPath?: string;
   readonly server?: string;
+  readonly storeContent: boolean;
+}
+
+/** What the arguments asked for. */
+export type Command =
+  | ({ readonly kind: 'wrap' } & ParsedArguments)
+  | { readonly kind: 'log'; readonly follow: boolean }
+  | { readonly kind: 'show'; readonly id: string }
+  | { readonly kind: 'usage' };
+
+/**
+ * The subcommand, or the wrap form.
+ *
+ * A bare name is a subcommand; anything else is the server to wrap. The wrap
+ * form has no verb because it is what a client's configuration file invokes, and
+ * that line is written once and read by people who did not write it.
+ */
+export function parseCommand(argv: readonly string[]): Command {
+  const [first, ...rest] = argv;
+  if (first === 'log') {
+    return { kind: 'log', follow: rest.includes('--follow') || rest.includes('-f') };
+  }
+  if (first === 'show') {
+    const id = rest.find((one) => !one.startsWith('-'));
+    return id === undefined ? { kind: 'usage' } : { kind: 'show', id };
+  }
+  const parsed = parseArguments(argv);
+  return parsed === undefined ? { kind: 'usage' } : { kind: 'wrap', ...parsed };
 }
 
 /** Returns the upstream command and our own options, or undefined when no command is named. */
@@ -67,6 +106,7 @@ export function parseArguments(argv: readonly string[]): ParsedArguments | undef
 
   let policyPath: string | undefined;
   let server: string | undefined;
+  let storeContent = true;
   for (let at = 0; at < ours.length; at += 1) {
     const flag = ours[at];
     const value = ours[at + 1];
@@ -76,6 +116,8 @@ export function parseArguments(argv: readonly string[]): ParsedArguments | undef
     } else if (flag === '--server' && value !== undefined) {
       server = value;
       at += 1;
+    } else if (flag === '--no-store-content') {
+      storeContent = false;
     } else {
       return undefined;
     }
@@ -88,13 +130,16 @@ export function parseArguments(argv: readonly string[]): ParsedArguments | undef
   return {
     command,
     args,
+    storeContent,
     ...(policyPath === undefined ? {} : { policyPath }),
     ...(server === undefined ? {} : { server }),
   };
 }
 
 export function defaultPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
-  const base = env['XDG_CONFIG_HOME'] ?? join(homedir(), '.config');
+  // An empty value means unset, or the default policy path would be relative and
+  // a policy the user wrote would silently not be found.
+  const base = env['XDG_CONFIG_HOME'] || join(homedir(), '.config');
   return join(base, 'agent-chaperone', 'policy.yaml');
 }
 
@@ -145,16 +190,101 @@ export async function settleUpstream(
   }
 }
 
+/**
+ * `log`: what this session decided, one line each.
+ *
+ * Shadow mode is the default and blocks nothing, so this is the only place a
+ * user sees it working. The decision column says what was done and, when they
+ * differ, what the policy would have done instead, which is the comparison a
+ * threshold is chosen from.
+ */
+export function runLog(io: RunStreams, env: NodeJS.ProcessEnv = process.env): number {
+  const records = recentRecords(undefined, env);
+  if (records.length === 0) {
+    io.errorOutput.write('agent-chaperone: nothing has been screened yet.\n');
+    return 0;
+  }
+  io.output.write(records.map((record) => `${formatRecord(record)}\n`).join(''));
+  return 0;
+}
+
+/** `log --follow`: the same lines, and then whatever happens next. */
+export async function runFollow(
+  io: RunStreams,
+  signal: AbortSignal,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
+  await followRecords((record) => io.output.write(`${formatRecord(record)}\n`), { signal, env });
+  return 0;
+}
+
+/**
+ * Text on its way to a terminal, with anything that could move a cursor removed.
+ *
+ * `sanitizeMessage` is the wrong instrument for a whole result: it collapses
+ * whitespace and cuts at 200 characters, and this is the copy a user asked to
+ * read in full. Line breaks stay; everything that is not a line break goes.
+ */
+function scrubForTerminal(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => sanitizeMessage(line))
+    .join('\n');
+}
+
+/** `show`: what was actually held or withheld, which the agent was not given. */
+export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = process.env): number {
+  const record = findRecord(id, env);
+  if (record === undefined) {
+    io.errorOutput.write(`agent-chaperone: no record with id ${id}.\n`);
+    return EXIT_USAGE;
+  }
+  if (record.content === undefined) {
+    io.output.write(`${formatRecord(record)}\n`);
+    io.errorOutput.write(
+      'agent-chaperone: this session recorded judgments only, so there is nothing to show.\n',
+    );
+    return 0;
+  }
+  const body =
+    record.kind === 'result'
+      ? record.content.text
+      : JSON.stringify(record.content.arguments, null, 2);
+  // Printed to a terminal, and withheld in the first place because something in
+  // it was addressed to whoever reads it. Control characters come out.
+  io.output.write(`${formatRecord(record)}\n\n${scrubForTerminal(body ?? '')}\n`);
+  return 0;
+}
+
 export async function run(
   argv: readonly string[],
   io: RunStreams = { input: process.stdin, output: process.stdout, errorOutput: process.stderr },
   options: RunOptions = {},
 ): Promise<number> {
-  const parsed = parseArguments(argv);
-  if (parsed === undefined) {
+  const asked = parseCommand(argv);
+  if (asked.kind === 'usage') {
     io.errorOutput.write(`${USAGE}\n`);
     return EXIT_USAGE;
   }
+  if (asked.kind === 'log') {
+    if (!asked.follow) {
+      return runLog(io);
+    }
+    const stop = new AbortController();
+    const onSignal = (): void => stop.abort();
+    process.once('SIGINT', onSignal);
+    process.once('SIGTERM', onSignal);
+    try {
+      return await runFollow(io, stop.signal);
+    } finally {
+      process.off('SIGINT', onSignal);
+      process.off('SIGTERM', onSignal);
+    }
+  }
+  if (asked.kind === 'show') {
+    return runShow(asked.id, io);
+  }
+  const parsed = asked;
 
   const policyPath = parsed.policyPath ?? defaultPolicyPath();
   let policy: Policy;
@@ -188,16 +318,15 @@ export async function run(
   // zero having silently stopped relaying, which is the worst way for a
   // security tool to fail.
   let chaperoneFault = false;
-  // Until the audit log lands, a judgment goes to stderr as one JSON line. That
-  // is where a client shows server diagnostics, and it keeps shadow mode useful
-  // in the meantime, which is the only mode that ships on by default.
+  const audit = createAuditLog({
+    storeContent: parsed.storeContent,
+    onProblem: (message) => io.errorOutput.write(`agent-chaperone: ${message}\n`),
+  });
   const gate = createScreeningGate({
     policy,
     server,
     ...(backend === undefined ? {} : { backend }),
-    onJudgment: (judgment: Judgment) => {
-      io.errorOutput.write(`${JSON.stringify(judgment)}\n`);
-    },
+    onJudgment: (judgment: Judgment) => audit.write(judgment),
   });
   const proxy = createProxy(
     {

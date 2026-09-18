@@ -109,6 +109,12 @@ export function findSecrets(
   const found: SecretMatch[] = [];
 
   for (const { kind, pattern } of SECRET_PATTERNS) {
+    // Checked before each pattern as well as after each match. Breaking only the
+    // inner loop let every later pattern add one more match past the cap, so the
+    // bound was not a bound and what it cut off depended on pattern order.
+    if (found.length >= MAX_MATCHES) {
+      break;
+    }
     if (!wanted.has(kind)) {
       continue;
     }
