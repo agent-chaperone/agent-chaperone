@@ -19,7 +19,7 @@ agent-chaperone/
     proxy/       Transport plumbing, framing, request and response correlation
     cli/         Command line entry point
     screens/     State builders and question batteries              (#7)
-    rules/       Deterministic checks, redaction, hidden text        (#5)
+    rules/       Deterministic checks, redaction, hidden text
     policy/      Schema, thresholds, pure decision functions
     backends/    Model backend interface and implementations         (#6)
     audit/       JSONL writer, report, replay                        (#9)

@@ -32,6 +32,10 @@ README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, ROADMAP, this file, and AGENTS.
 
 `docs/design.md` and ADRs 0001 to 0005.
 
+### Policy and decisions (#4)
+
+The policy file schema fills in every threshold and rejects what would behave surprisingly, including an annotate threshold that quarantine would always reach first. `decidePreCall` and `decidePostResult` are pure, and shadow mode records what it decided while applying nothing.
+
 ### Proxy relay (#3)
 
 Spawns the upstream server over stdio and relays every message in both directions exactly as it arrived, pairing each response with the request that produced it. Nothing is screened: `createProxy` takes an `onEvent` callback, and that callback is the seam the screens attach to in #8.
@@ -42,20 +46,19 @@ Spawns the upstream server over stdio and relays every message in both direction
 
 ## What's In Progress
 
-The policy file and the decision functions, issue #4. The schema validates and fills in every threshold, and `decidePreCall` and `decidePostResult` are pure: answers and policy in, an action out. They are not wired to anything yet; the proxy starts consulting them in #8.
+The deterministic layer, issue #5. Allow and deny matching, dangerous shell forms, secret redaction, hidden-text detection and the block splitter the post-result question needs. It runs before any model request and costs nothing, which is what the tool does when no API key is configured. Not wired to the proxy yet; that is #8.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `rules` (#5): allow and deny lists, dangerous shell patterns, secret redaction, hidden-text detection, block splitting.
-2. `backends` (#6): backend interface, TypeSafe implementation, recorded-response fake for tests.
-3. `screens` (#7): pre-call and post-result state builders and batteries.
-4. `proxy` (#8): wire the screens in, with shadow and enforce modes.
-5. `audit` (#9): JSONL writer, `log` and `show` commands.
-6. `cli` (#10): hold and approve flow, `approve` command.
-7. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-8. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `backends` (#6): backend interface, TypeSafe implementation, recorded-response fake for tests.
+2. `screens` (#7): pre-call and post-result state builders and batteries.
+3. `proxy` (#8): wire the screens in, with shadow and enforce modes.
+4. `audit` (#9): JSONL writer, `log` and `show` commands.
+5. `cli` (#10): hold and approve flow, `approve` command.
+6. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+7. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
@@ -73,7 +76,7 @@ M1, in dependency order:
 | Benchmark harness and results | done |
 | proxy | relay done (#3), screening pending (#8) |
 | policy | schema and decision functions done (#4), not yet consulted (#8) |
-| rules | not started |
+| rules | done (#5), not yet consulted (#8) |
 | backends | not started |
 | screens | not started |
 | audit | not started |

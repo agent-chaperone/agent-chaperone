@@ -225,8 +225,23 @@ servers:
     screen_results: false     # trusted, private content never leaves the machine
 
 redaction:
-  patterns: [aws_key, github_token, private_key, jwt, generic_api_key]
+  patterns: [aws_key, github_token, private_key, jwt, slack_token, bearer_token, connection_string, generic_api_key]
 ```
+
+`redaction.patterns` is a closed list, and a name with no pattern behind it is rejected rather than ignored, because a typo that silently disables redaction is the failure this file exists to prevent. Omitting the key entirely means every kind. The kinds are:
+
+| Kind | What it matches |
+| --- | --- |
+| `aws_key` | An access key id, by its issued prefix |
+| `github_token` | The `gh*_` token formats and fine-grained tokens |
+| `private_key` | The opening line of a PEM private key |
+| `jwt` | A three-part signed token |
+| `slack_token` | The `xox*-` token formats |
+| `bearer_token` | A credential in an authorization header, which carries no field name |
+| `connection_string` | The password inside a URL, leaving the host readable |
+| `generic_api_key` | A named field assigned a long opaque value, including an AWS secret access key |
+
+A credential shape buried inside a longer token is deliberately not matched, so that hashes and identifiers are not redacted as secrets. The model question is the backstop for what that misses.
 
 Every value a decision compares against is a number in this file and nowhere else, including `uncertain_severity_confidence`, which is the confidence below which a hold is labelled uncertain rather than stated flatly. Changing one does not re-run inference: `agent-chaperone replay --policy new.yaml` applies a policy to the recorded judgments in the audit log and shows what would have changed.
 
