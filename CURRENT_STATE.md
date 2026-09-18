@@ -62,22 +62,27 @@ The relay now asks a gate before it writes. A gate returning a verdict rather th
 
 The CLI wires it up: it reads the policy file, picks a backend, and screens a real session. Judgments go to stderr as JSON lines until the audit log gives them a home.
 
+### Audit log (#9)
+
+One JSONL line per screened message, in a per-session file under the user's state directory, created for the owner alone. The record carries what the decision was made from and not only what it was, because `replay` reads the same lines later: every probability, the action the policy chose beside the one that was applied, the model, the latency, the tokens and the cost. Content is stored as it went to the model, which is to say already redacted, and `--no-store-content` keeps the judgments and drops it. A log that cannot be written says so once and stops trying, because a firewall that refuses to relay because its disk filled up has turned a full disk into an outage.
+
+`agent-chaperone log` prints what has been decided, one readable line each, saying what was done and what the policy would have done instead, and `--follow` keeps printing. It reads every session, because a client normally wraps several servers and each is its own process. That comparison is the point of shadow mode: it is how a user sees where their thresholds sit on their own traffic before turning enforcement on. `agent-chaperone show <id>` prints what was held or withheld, which is the copy the agent never received.
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
-Nothing in flight. A session is screened end to end; what is missing is where the judgments go and how a held call gets resumed.
+Nothing in flight. A session is screened and recorded; what is missing is how a held call gets resumed, and the tools that never go through MCP.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `audit` (#9): JSONL writer, `log` and `show` commands.
-2. `cli` (#10): hold and approve flow, `approve` command.
-3. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-4. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `cli` (#10): hold and approve flow, `approve` command.
+2. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+3. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
@@ -101,6 +106,6 @@ M1, in dependency order:
 | backends | done (#6), asked on every screen (#8) |
 | screens | done (#7), built on every screen (#8) |
 | screening | done (#8) |
-| audit | not started |
-| cli | wraps and screens a server (#8), commands pending (#10) |
+| audit | done (#9) |
+| cli | wraps, screens, `log` and `show` (#8, #9), approve pending (#10) |
 | hooks | not started |
