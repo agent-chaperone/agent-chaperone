@@ -65,7 +65,7 @@ agent-chaperone
 upstream server (child process over stdio, or Streamable HTTP)
 ```
 
-One TypeScript package. The MCP SDK provides both the server side (facing the client) and the client side (facing the upstream). Requests and responses are correlated by JSON-RPC id so a result can be screened together with the arguments that produced it.
+One TypeScript package. It speaks JSON-RPC over stdio on both sides using its own newline framing rather than the MCP SDK's stdio transports, for the reason in ADR-0006: the SDK validates each message against a strict schema and rejects a request carrying an unknown top-level field, which a transparent proxy cannot do. Requests and responses are correlated by JSON-RPC id so a result can be screened together with the arguments that produced it.
 
 Screens run as messages arrive. Independent questions about one message go in one request. Different messages are screened in parallel.
 
