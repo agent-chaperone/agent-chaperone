@@ -21,6 +21,18 @@ export {
   DEFAULT_MAX_PENDING_BYTES,
   frame,
 } from './proxy/index.js';
+export {
+  MODES,
+  PolicyError,
+  assessSeverity,
+  decidePostResult,
+  decidePreCall,
+  defaultPolicy,
+  parsePolicy,
+  policyForServer,
+  policySchema,
+  shouldScreen,
+} from './policy/index.js';
 export type {
   CorrelatorOptions,
   Direction,
@@ -34,3 +46,21 @@ export type {
   ProxyStreams,
   Upstream,
 } from './proxy/index.js';
+export type {
+  CallAction,
+  CallAnswers,
+  CallReason,
+  CallRuleFindings,
+  CallThresholds,
+  Decision,
+  Mode,
+  Policy,
+  ResultAction,
+  ResultAnswers,
+  ResultRuleFindings,
+  ResultThresholds,
+  ScoreAnswer,
+  ServerPolicy,
+  SeverityAssessment,
+  SeverityLabel,
+} from './policy/index.js';
