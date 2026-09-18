@@ -21,6 +21,7 @@ export {
 export { buildPreCallScreen, noulOf, readCallAnswers, scoreOf } from './precall.js';
 export {
   DEFAULT_MAX_STATE_CHARS,
+  MAX_TOOL_CHARS,
   buildPostResultScreens,
   chunkBlocks,
   mergeResultAnswers,

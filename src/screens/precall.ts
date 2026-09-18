@@ -3,10 +3,12 @@
  * turned back into what the decision rules read.
  *
  * The state carries only what is known. With a tool and arguments and nothing
- * else, the request is field for field what the benchmark measured, which is
+ * else, the request is what the benchmark measured, battery included, which is
  * what lets the README's numbers describe the tool as it actually ships. A
  * policy, a task or tool annotations are additions to that request, and the
  * questions they belong to are added with them rather than asked into a blank.
+ * Those two questions are also the two the numbers do not cover, because no
+ * benchmark row carries a policy or a task for them to be asked about.
  *
  * Arguments arrive redacted. The rules layer has already replaced every secret
  * shape it matched, and the field is named for that here so passing the

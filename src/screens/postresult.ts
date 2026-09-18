@@ -17,13 +17,7 @@ import type { Answer, Battery } from '../backends/index.js';
 import type { ResultAnswers, ScoreAnswer } from '../policy/index.js';
 import type { Block, HiddenRegion } from '../rules/index.js';
 import { noulOf, scoreOf } from './precall.js';
-import {
-  EXPOSES_SECRET,
-  INSTRUCTS_READER,
-  NO_BLOCK,
-  RESULT_SEVERITY,
-  whichBlock,
-} from './questions.js';
+import { EXPOSES_SECRET, INSTRUCTS_READER, RESULT_SEVERITY, whichBlock } from './questions.js';
 
 /**
  * How much block text one request carries.
@@ -34,8 +28,28 @@ import {
  */
 export const DEFAULT_MAX_STATE_CHARS = 16_000;
 
-/** A block id as a choice spells it. */
+/**
+ * How much of the request the tool's own arguments may take.
+ *
+ * They are context for judging the result, not the thing being judged, and they
+ * are repeated in every chunk. Without a cap, an agent that has already been
+ * turned can pad the arguments of the call it makes and multiply that padding by
+ * the number of chunks the result splits into, pushing every request past what
+ * the API will accept so that nothing gets screened at all.
+ */
+export const MAX_TOOL_CHARS = 2_000;
+
+/** A block id as a choice spells it, bounded so a long run of digits cannot become a block number. */
 const BLOCK_ID = /^[0-9]{1,9}$/;
+
+/** Length of the JSON a value would serialize to, or undefined when it would not serialize. */
+function jsonLength(value: unknown): number | undefined {
+  try {
+    return JSON.stringify(value)?.length;
+  } catch {
+    return undefined;
+  }
+}
 
 export interface PostResultTool {
   readonly name: string;
@@ -69,6 +83,26 @@ export interface PostResultScreen {
 }
 
 /**
+ * The tool, with arguments it cannot be allowed to make arbitrarily large.
+ *
+ * Oversized arguments are replaced by a note saying so rather than dropped in
+ * silence, because what the model is looking at should be what the state says it
+ * is looking at.
+ */
+function boundedTool(tool: PostResultTool): PostResultTool {
+  if (tool.arguments === undefined) {
+    return { name: tool.name };
+  }
+  const length = jsonLength(tool.arguments);
+  if (length === undefined) {
+    return { name: tool.name, arguments: '[arguments omitted: not representable as JSON]' };
+  }
+  return length > MAX_TOOL_CHARS
+    ? { name: tool.name, arguments: `[arguments omitted: ${length} characters]` }
+    : { name: tool.name, arguments: tool.arguments };
+}
+
+/**
  * Blocks packed into chunks that each fit the budget.
  *
  * A block larger than the budget on its own gets a chunk to itself rather than
@@ -79,7 +113,10 @@ export function chunkBlocks(
   blocks: readonly Block[],
   maxStateChars: number = DEFAULT_MAX_STATE_CHARS,
 ): Block[][] {
-  const budget = Math.max(1, maxStateChars);
+  // `Math.max(1, NaN)` is NaN, and every comparison against NaN is false, so a
+  // nonsense budget would put the whole result in one chunk instead of the
+  // smallest one. Infinity is left alone: that genuinely does mean one chunk.
+  const budget = Number.isNaN(maxStateChars) ? 1 : Math.max(1, maxStateChars);
   const chunks: Block[][] = [];
   let current: Block[] = [];
   let used = 0;
@@ -106,12 +143,14 @@ export function chunkBlocks(
  * plainly, rather than sending a battery about blocks that are not there.
  */
 export function buildPostResultScreens(input: PostResultInput): PostResultScreen[] {
-  const tool: PostResultTool = {
-    name: input.tool.name,
-    ...(input.tool.arguments === undefined ? {} : { arguments: input.tool.arguments }),
-  };
+  const tool = boundedTool(input.tool);
+  // The budget covers the request, not just its blocks. The tool travels in every
+  // chunk, so whatever it takes is taken again each time and has to come out of
+  // the same allowance.
+  const overhead = jsonLength(tool) ?? 0;
+  const budget = Math.max(1, (input.maxStateChars ?? DEFAULT_MAX_STATE_CHARS) - overhead);
 
-  return chunkBlocks(input.blocks, input.maxStateChars).map((blocks) => {
+  return chunkBlocks(input.blocks, budget).map((blocks) => {
     const ids = new Set(blocks.map((block) => block.id));
     const hidden = (input.hidden_regions ?? [])
       .filter((region) => ids.has(region.block))
@@ -146,12 +185,11 @@ export function readResultAnswers(answers: Readonly<Record<string, Answer>>): Re
   const severity = scoreOf(answers, 'severity');
 
   const choice = answers['which_block'];
-  // Digits and nothing else. `Number` would turn an empty choice into zero,
-  // which is a real block and the one a result usually opens with.
+  // Digits and nothing else, which is also what refuses `none`. `Number` would
+  // turn an empty choice into zero, and zero is a real block, usually the one a
+  // result opens with.
   const picked =
-    choice?.kind === 'choice' && choice.choice !== NO_BLOCK && BLOCK_ID.test(choice.choice)
-      ? Number(choice.choice)
-      : undefined;
+    choice?.kind === 'choice' && BLOCK_ID.test(choice.choice) ? Number(choice.choice) : undefined;
 
   return {
     ...(instructs_reader === undefined ? {} : { instructs_reader }),

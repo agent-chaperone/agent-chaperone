@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildPreCallScreen, readCallAnswers } from './precall.js';
+import {
+  CALL_SEVERITY,
+  DESTRUCTIVE,
+  EXFILTRATION,
+  OFF_TASK,
+  POLICY_VIOLATION,
+  SECRET_IN_ARGS,
+} from './questions.js';
 import { DESTRUCTIVE_CALL_INPUT } from './recorded.js';
 
 const CASES = readFileSync(new URL('../../bench/src/precall_cases.py', import.meta.url), 'utf8');
@@ -165,5 +173,53 @@ describe('readCallAnswers', () => {
 
   it('reads nothing out of nothing', () => {
     expect(readCallAnswers({})).toEqual({});
+  });
+});
+
+describe('the battery carries the questions its ids name', () => {
+  it('puts each question in the slot the decision rules read it from', () => {
+    const battery = buildPreCallScreen({
+      ...DESTRUCTIVE_CALL_INPUT,
+      policy: 'no force-pushing',
+      task: 'fix the links',
+    }).battery;
+
+    // The id is what the rules key on, and each id has its own threshold, so an
+    // id holding the wrong question quietly applies the wrong one.
+    expect(battery['destructive']).toBe(DESTRUCTIVE);
+    expect(battery['exfiltration']).toBe(EXFILTRATION);
+    expect(battery['severity']).toBe(CALL_SEVERITY);
+    expect(battery['secret_in_args']).toBe(SECRET_IN_ARGS);
+    expect(battery['policy_violation']).toBe(POLICY_VIOLATION);
+    expect(battery['off_task']).toBe(OFF_TASK);
+  });
+
+  it('asks a score question under the id that expects a score', () => {
+    const battery = buildPreCallScreen(DESTRUCTIVE_CALL_INPUT).battery;
+
+    expect(battery['severity']?.kind).toBe('score');
+    for (const id of ['destructive', 'exfiltration', 'secret_in_args']) {
+      expect(battery[id]?.kind).toBe('noul');
+    }
+  });
+});
+
+describe('a description that is not really there', () => {
+  it.each([[''], ['   '], ['\n\t']])('omits %o rather than sending it', (description) => {
+    const screen = buildPreCallScreen({
+      tool: { name: 'fetch', description },
+      redacted_arguments: {},
+    });
+
+    expect(Object.hasOwn(screen.state.tool, 'description')).toBe(false);
+  });
+
+  it('keeps a description that says something', () => {
+    const screen = buildPreCallScreen({
+      tool: { name: 'fetch', description: 'Fetch a URL' },
+      redacted_arguments: {},
+    });
+
+    expect(screen.state.tool.description).toBe('Fetch a URL');
   });
 });

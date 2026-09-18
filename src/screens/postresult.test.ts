@@ -1,17 +1,31 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MAX_STATE_CHARS,
+  MAX_TOOL_CHARS,
   buildPostResultScreens,
   chunkBlocks,
   mergeResultAnswers,
   readResultAnswers,
 } from './postresult.js';
-import { NO_BLOCK } from './questions.js';
+import {
+  EXPOSES_SECRET,
+  INSTRUCTS_READER,
+  NO_BLOCK,
+  RESULT_SEVERITY,
+  whichBlock,
+} from './questions.js';
 import type { Block } from '../rules/index.js';
 
 const blocksOf = (...texts: string[]): Block[] => texts.map((text, id) => ({ id, text }));
 
 const fill = (chars: number, id: number): Block => ({ id, text: 'x'.repeat(chars) });
+
+/**
+ * What the tool itself costs in a request. The budget covers the whole state, and
+ * the tool rides in every chunk, so a test that wants room for N blocks has to
+ * ask for the tool's share on top.
+ */
+const TOOL_OVERHEAD = JSON.stringify({ name: 'fetch' }).length;
 
 describe('the post-result request', () => {
   it('is the state the design document writes, field for field', () => {
@@ -102,7 +116,7 @@ describe('chunking a result too large for one request', () => {
     const screens = buildPostResultScreens({
       tool: { name: 'fetch' },
       blocks: [fill(60, 0), fill(60, 1), fill(60, 2)],
-      maxStateChars: 120,
+      maxStateChars: TOOL_OVERHEAD + 120,
     });
 
     expect(screens[1]?.state.blocks.map((block) => block.id)).toEqual([2]);
@@ -119,7 +133,7 @@ describe('chunking a result too large for one request', () => {
     const screens = buildPostResultScreens({
       tool: { name: 'fetch' },
       blocks: [fill(60, 0), fill(60, 1), fill(60, 2)],
-      maxStateChars: 120,
+      maxStateChars: TOOL_OVERHEAD + 120,
       hidden_regions: [
         { block: 0, kind: 'zero_width', offset: 0, length: 1 },
         { block: 2, kind: 'html_comment', offset: 0, length: 1 },
@@ -239,5 +253,192 @@ describe('merging the chunks of one result', () => {
     };
 
     expect(mergeResultAnswers([one])).toEqual(one);
+  });
+});
+
+describe('what the tool itself is allowed to cost', () => {
+  // Written out rather than derived from the constant, so raising the cap cannot
+  // quietly raise the input this checks it against.
+  const bigArguments = { blob: 'z'.repeat(5_000) };
+
+  it('caps the tool at a size a request can afford to repeat', () => {
+    expect(MAX_TOOL_CHARS).toBe(2_000);
+  });
+
+  it('replaces arguments too large to repeat in every chunk', () => {
+    const screens = buildPostResultScreens({
+      tool: { name: 'fetch', arguments: bigArguments },
+      blocks: blocksOf('a'),
+    });
+
+    expect(screens[0]?.state.tool.arguments).toMatch(/^\[arguments omitted: \d+ characters\]$/);
+  });
+
+  it('keeps arguments that fit', () => {
+    const screens = buildPostResultScreens({
+      tool: { name: 'fetch', arguments: { url: 'https://example.com' } },
+      blocks: blocksOf('a'),
+    });
+
+    expect(screens[0]?.state.tool.arguments).toEqual({ url: 'https://example.com' });
+  });
+
+  it('says so rather than sending arguments that will not serialize', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic['self'] = cyclic;
+
+    const screens = buildPostResultScreens({
+      tool: { name: 'fetch', arguments: cyclic },
+      blocks: blocksOf('a'),
+    });
+
+    expect(screens[0]?.state.tool.arguments).toBe('[arguments omitted: not representable as JSON]');
+  });
+
+  it('does not let padded arguments multiply across chunks', () => {
+    // The attack this closes: an agent that has already been turned pads the
+    // arguments of the call it makes, and every chunk of the result carries that
+    // padding again until no request is small enough to be answered.
+    const screens = buildPostResultScreens({
+      tool: { name: 'fetch', arguments: bigArguments },
+      blocks: [fill(4_000, 0), fill(4_000, 1), fill(4_000, 2), fill(4_000, 3)],
+    });
+
+    for (const screen of screens) {
+      expect(JSON.stringify(screen.state).length).toBeLessThanOrEqual(
+        DEFAULT_MAX_STATE_CHARS * 1.2,
+      );
+    }
+  });
+
+  it('takes the tool out of the block allowance rather than adding to it', () => {
+    const roomy = buildPostResultScreens({
+      tool: { name: 'x' },
+      blocks: [fill(60, 0), fill(60, 1)],
+      maxStateChars: TOOL_OVERHEAD + 120,
+    });
+    const tight = buildPostResultScreens({
+      tool: { name: 'x', arguments: { pad: 'p'.repeat(100) } },
+      blocks: [fill(60, 0), fill(60, 1)],
+      maxStateChars: TOOL_OVERHEAD + 120,
+    });
+
+    expect(roomy).toHaveLength(1);
+    expect(tight.length).toBeGreaterThan(1);
+  });
+
+  it('omits the arguments key when there are none, rather than sending it empty', () => {
+    const screens = buildPostResultScreens({ tool: { name: 'fetch' }, blocks: blocksOf('a') });
+
+    // Asserted on the object, because JSON.stringify hides a key whose value is
+    // undefined and would let an always-present key through.
+    expect(Object.hasOwn(screens[0]?.state.tool ?? {}, 'arguments')).toBe(false);
+  });
+});
+
+describe('the battery carries the questions its ids name', () => {
+  it('puts each post-result question in the slot the rules read it from', () => {
+    const battery = buildPostResultScreens({
+      tool: { name: 'fetch' },
+      blocks: blocksOf('a', 'b'),
+    })[0]?.battery;
+
+    expect(battery?.['instructs_reader']).toBe(INSTRUCTS_READER);
+    expect(battery?.['severity']).toBe(RESULT_SEVERITY);
+    expect(battery?.['exposes_secret']).toBe(EXPOSES_SECRET);
+    expect(battery?.['which_block']).toEqual(whichBlock([0, 1]));
+  });
+});
+
+describe('chunk boundaries', () => {
+  it('does not open with an empty chunk when the first block is oversized', () => {
+    const chunks = chunkBlocks([fill(500, 0), fill(1, 1)], 100);
+
+    expect(chunks.every((chunk) => chunk.length > 0)).toBe(true);
+    expect(chunks.map((chunk) => chunk.map((block) => block.id))).toEqual([[0], [1]]);
+  });
+
+  it('gives every chunk the whole budget, not one character less each time', () => {
+    const blocks = Array.from({ length: 12 }, (_unused, id) => fill(25, id));
+
+    const chunks = chunkBlocks(blocks, 100);
+
+    for (const chunk of chunks) {
+      const used = chunk.reduce((total, block) => total + block.text.length, 0);
+      // Four 25-character blocks is exactly the budget, and every chunk should
+      // hold four of them.
+      expect(used).toBe(100);
+    }
+    expect(chunks).toHaveLength(3);
+  });
+
+  it.each([[0], [-1], [Number.NaN]])('treats %o as the smallest budget there is', (budget) => {
+    const chunks = chunkBlocks([fill(5, 0), fill(5, 1)], budget);
+
+    expect(chunks.map((chunk) => chunk.map((block) => block.id))).toEqual([[0], [1]]);
+  });
+
+  it('treats an unbounded budget as one chunk, which is what it means', () => {
+    const chunks = chunkBlocks([fill(5, 0), fill(5, 1)], Number.POSITIVE_INFINITY);
+
+    expect(chunks).toHaveLength(1);
+  });
+
+  it('uses the published default when no budget is given', () => {
+    const under = Array.from({ length: 8 }, (_unused, id) => fill(DEFAULT_MAX_STATE_CHARS / 8, id));
+    const over = [...under, fill(1, 8)];
+
+    expect(chunkBlocks(under)).toHaveLength(1);
+    expect(chunkBlocks(over)).toHaveLength(2);
+  });
+});
+
+describe('ties between chunks', () => {
+  it('keeps the confidence of the first chunk to reach the highest severity', () => {
+    expect(
+      mergeResultAnswers([
+        { severity: { score: 2, confidence: 0.9 } },
+        { severity: { score: 2, confidence: 0.1 } },
+      ]).severity,
+    ).toEqual({ score: 2, confidence: 0.9 });
+  });
+
+  it('keeps the block named by the first chunk to reach the highest probability', () => {
+    expect(
+      mergeResultAnswers([
+        { instructs_reader: 0.9, which_block: 3 },
+        { instructs_reader: 0.9, which_block: 8 },
+      ]).which_block,
+    ).toBe(3);
+  });
+
+  it('lets a chunk that answered zero outrank one that did not answer at all', () => {
+    expect(
+      mergeResultAnswers([{ which_block: 5 }, { instructs_reader: 0, which_block: 2 }]).which_block,
+    ).toBe(2);
+  });
+
+  it('prefers an answer of zero to no answer, even when only the silent chunk named a block', () => {
+    // A chunk that was asked and said no outranks one that was never answered,
+    // so the block it declines to name is the one that stands.
+    const merged = mergeResultAnswers([{ which_block: 5 }, { instructs_reader: 0 }]);
+
+    expect(Object.hasOwn(merged, 'which_block')).toBe(false);
+  });
+});
+
+describe('a block choice that is not a block', () => {
+  it('refuses a run of digits too long to be a block number', () => {
+    const answers = readResultAnswers({
+      which_block: { kind: 'choice', choice: '1'.repeat(30), confidence: 0.9, probabilities: {} },
+    });
+
+    expect(Object.hasOwn(answers, 'which_block')).toBe(false);
+  });
+
+  it('refuses an answer that is not a choice at all', () => {
+    const answers = readResultAnswers({ which_block: { kind: 'noul', noul: 0.5 } });
+
+    expect(Object.hasOwn(answers, 'which_block')).toBe(false);
   });
 });
