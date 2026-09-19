@@ -66,7 +66,6 @@ Reaching servers that are not a local process, and noticing when a server stops 
 - Elicitation-based confirmation when the client supports it
 - `wrap` command that edits the common client configurations in place
 - OpenRouter and Vercel AI Gateway backends
-- `report` and `replay` commands
 
 ---
 
