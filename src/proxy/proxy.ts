@@ -60,7 +60,19 @@ export type ProxyEvent =
       /** False when the far side was already gone, so the line never left. */
       readonly delivered: boolean;
     }
-  | { readonly type: 'stream-error'; readonly direction: Direction; readonly error: Error };
+  | { readonly type: 'stream-error'; readonly direction: Direction; readonly error: Error }
+  /**
+   * A pending request dropped to keep the correlator inside its bounds.
+   *
+   * Reported because the response it would have been paired with is about to
+   * arrive unpaired, and without this there is nothing to explain that by. A
+   * peer can spend cheap requests to force one.
+   */
+  | {
+      readonly type: 'correlator-eviction';
+      readonly request: PendingRequest;
+      readonly reason: 'count' | 'bytes';
+    };
 
 export interface ProxyStreams {
   readonly clientInput: Readable;
@@ -104,7 +116,13 @@ export function createProxy(streams: ProxyStreams, options: ProxyOptions = {}): 
   const now = options.now ?? Date.now;
   const emit = options.onEvent ?? (() => undefined);
   const gate = options.gate ?? ((): GateVerdict => FORWARD);
-  const correlator = new RequestCorrelator(options);
+  const correlator = new RequestCorrelator({
+    ...options,
+    onEvict: (evicted) => {
+      options.onEvict?.(evicted);
+      emit({ type: 'correlator-eviction', request: evicted.request, reason: evicted.reason });
+    },
+  });
 
   let openDirections = 2;
   let settle: () => void = () => undefined;

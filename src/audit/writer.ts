@@ -15,7 +15,7 @@ import { appendFileSync, mkdirSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Judgment } from '../screening/index.js';
 import { sessionFileName, sessionsDirectory } from './paths.js';
-import { toRecord, type AuditRecord } from './record.js';
+import { toEvictionRecord, toRecord, type AuditRecord } from './record.js';
 
 /** Owner read and write, and nothing for anyone else. */
 export const FILE_MODE = 0o600;
@@ -34,6 +34,16 @@ export interface AuditLogOptions {
 export interface AuditLog {
   readonly path: string;
   write(judgment: Judgment): void;
+  /**
+   * Record a pending request dropped to keep the correlator in bounds, so the
+   * unpaired response that follows can be explained after the fact.
+   */
+  writeEviction(input: {
+    readonly server: string;
+    readonly id: unknown;
+    readonly method: string;
+    readonly reason: 'count' | 'bytes';
+  }): void;
   /** The records written so far, for a caller that wants them without re-reading the file. */
   readonly written: number;
 }
@@ -72,26 +82,32 @@ export function createAuditLog(options: AuditLogOptions = {}): AuditLog {
     ready = true;
   };
 
+  // Once, and then never again. Without this the proxy would pay for a failing
+  // filesystem call on every message it screens, which is the cost the header
+  // comment says a broken log must not impose on a session.
+  const append = (record: AuditRecord): void => {
+    if (broken) {
+      return;
+    }
+    try {
+      prepare();
+      appendFileSync(path, `${JSON.stringify(record)}\n`, { mode: FILE_MODE });
+      written += 1;
+    } catch (error) {
+      fail(error);
+    }
+  };
+
   return {
     path,
     get written() {
       return written;
     },
     write(judgment: Judgment): void {
-      // Once, and then never again. Without this the proxy would pay for a
-      // failing filesystem call on every message it screens, which is the cost
-      // the header comment says a broken log must not impose on a session.
-      if (broken) {
-        return;
-      }
-      try {
-        prepare();
-        const record: AuditRecord = toRecord(judgment, { now, storeContent });
-        appendFileSync(path, `${JSON.stringify(record)}\n`, { mode: FILE_MODE });
-        written += 1;
-      } catch (error) {
-        fail(error);
-      }
+      append(toRecord(judgment, { now, storeContent }));
+    },
+    writeEviction(input): void {
+      append(toEvictionRecord(input, { now, storeContent }));
     },
   };
 }

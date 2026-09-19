@@ -427,6 +427,7 @@ const captureAudit = (): { rows: Record<string, unknown>[]; log: AuditLog } => {
       path: '/dev/null',
       written: 0,
       write: (judgment) => rows.push(judgment as unknown as Record<string, unknown>),
+      writeEviction: () => undefined,
     } as AuditLog,
   };
 };

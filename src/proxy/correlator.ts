@@ -28,6 +28,22 @@ export const DEFAULT_MAX_PENDING_BYTES = 8 * 1024 * 1024;
 export interface CorrelatorOptions {
   readonly maxPending?: number;
   readonly maxPendingBytes?: number;
+  /**
+   * Called for each request dropped to make room, before it is dropped.
+   *
+   * Eviction is how the bounds hold, and the bounds are not optional: without
+   * them a peer that never answers costs memory without limit. What is not
+   * acceptable is doing it in silence. A peer can spend cheap requests to push
+   * out the one entry whose pairing mattered, and the response then arrives
+   * unpaired with nothing anywhere saying why.
+   */
+  readonly onEvict?: (evicted: Eviction) => void;
+}
+
+/** A pending request dropped to make room, and which bound made room necessary. */
+export interface Eviction {
+  readonly request: PendingRequest;
+  readonly reason: 'count' | 'bytes';
 }
 
 export class RequestCorrelator {
@@ -35,12 +51,14 @@ export class RequestCorrelator {
   readonly #bytes = new Map<string, number>();
   readonly #maxPending: number;
   readonly #maxPendingBytes: number;
+  readonly #onEvict: ((evicted: Eviction) => void) | undefined;
   #totalBytes = 0;
 
   constructor(options: CorrelatorOptions | number = {}) {
     const resolved = typeof options === 'number' ? { maxPending: options } : options;
     this.#maxPending = resolved.maxPending ?? DEFAULT_MAX_PENDING;
     this.#maxPendingBytes = resolved.maxPendingBytes ?? DEFAULT_MAX_PENDING_BYTES;
+    this.#onEvict = resolved.onEvict;
   }
 
   /**
@@ -96,7 +114,17 @@ export class RequestCorrelator {
       if (oldest.done) {
         return;
       }
+      // Which bound forced this, read before the entry goes. Count is reported
+      // when it alone would have been enough, so the answer does not change
+      // with the order the two are tested in.
+      const reason = this.#pending.size >= this.#maxPending ? 'count' : 'bytes';
+      const going = this.#pending.get(oldest.value);
       this.#drop(oldest.value);
+      if (going !== undefined && this.#onEvict !== undefined) {
+        // After the drop, so a reporter that throws cannot leave the bound
+        // unenforced and the map over its limit.
+        this.#onEvict({ request: going, reason });
+      }
     }
   }
 

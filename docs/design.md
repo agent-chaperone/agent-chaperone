@@ -67,6 +67,8 @@ upstream server (child process over stdio, or Streamable HTTP)
 
 One TypeScript package. It speaks JSON-RPC over stdio on both sides using its own newline framing rather than the MCP SDK's stdio transports, for the reason in ADR-0006: the SDK validates each message against a strict schema and rejects a request carrying an unknown top-level field, which a transparent proxy cannot do. Requests and responses are correlated by JSON-RPC id so a result can be screened together with the arguments that produced it.
 
+That correlation is bounded, by count and by bytes, because a peer that never answers would otherwise cost memory without limit. Reaching either bound drops the oldest pending request, which is a lever: a peer can spend cheap requests to push out the one entry whose pairing mattered, and the reply then arrives with nothing to pair it with. The bound stays, and the eviction is reported on the event seam and written to the audit log instead, so a missing pairing is explainable rather than silent. A response nobody can pair with a request is screened anyway, for the same reason.
+
 Screens run as messages arrive. Independent questions about one message go in one request, and the chunks of one large result go out together. Messages in the same direction are screened one at a time, because a relay that answered them out of order would hand a client a reply before the call it answers.
 
 Failure handling, per mode:

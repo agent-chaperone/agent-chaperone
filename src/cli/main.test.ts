@@ -17,6 +17,12 @@ import {
   runShow,
 } from './main.js';
 
+/** Only the judgment records, which is every record these tests write. */
+const judgments = <T extends { kind: string }>(
+  records: readonly T[],
+): Extract<T, { kind: 'call' | 'result' }>[] =>
+  records.filter((one): one is Extract<T, { kind: 'call' | 'result' }> => one.kind !== 'eviction');
+
 describe('parseArguments', () => {
   it('takes everything after the separator as the upstream command', () => {
     expect(parseArguments(['--', 'npx', '-y', 'some-server', '.'])).toEqual({
@@ -277,7 +283,7 @@ describe('run', () => {
       streams.input.end();
       await exit;
 
-      const records = readRecords(currentSession(process.env) ?? '');
+      const records = judgments(readRecords(currentSession(process.env) ?? ''));
       expect(records).toHaveLength(1);
       expect(records[0]?.content).toBeUndefined();
       expect(JSON.stringify(records)).not.toContain('secret.txt');
@@ -293,7 +299,7 @@ describe('run', () => {
       streams.input.end();
       await exit;
 
-      const records = readRecords(currentSession(process.env) ?? '');
+      const records = judgments(readRecords(currentSession(process.env) ?? ''));
       expect(records[0]?.content?.arguments).toEqual({ path: 'notes.txt' });
     });
 
@@ -917,7 +923,7 @@ describe('run', () => {
 
       // Mangled bytes here would mean screening something other than what the
       // model is about to read.
-      const records = readRecords(currentSession(process.env) ?? '') as {
+      const records = readRecords(currentSession(process.env) ?? '') as unknown as {
         content?: { text?: string };
       }[];
       expect(records[0]?.content?.text).toContain(note);
@@ -943,7 +949,9 @@ describe('run', () => {
       );
       await exit;
 
-      const records = readRecords(currentSession(process.env) ?? '') as { content?: unknown }[];
+      const records = readRecords(currentSession(process.env) ?? '') as unknown as {
+        content?: unknown;
+      }[];
       expect(records).toHaveLength(1);
       expect(records[0]).not.toHaveProperty('content');
     });
@@ -965,7 +973,7 @@ describe('run', () => {
       );
       await exit;
 
-      const records = readRecords(currentSession(process.env) ?? '') as {
+      const records = readRecords(currentSession(process.env) ?? '') as unknown as {
         content?: { text?: string };
       }[];
       expect(records[0]?.content?.text).toContain('kept');

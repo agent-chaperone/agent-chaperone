@@ -8,6 +8,7 @@
 export { sessionsDirectory, sessionFileName, stateDirectory } from './paths.js';
 export { PRICE_PER_MTOK, costOf, formatRecord, toRecord } from './record.js';
 export { DIRECTORY_MODE, FILE_MODE, createAuditLog, sessionPath } from './writer.js';
+export { toEvictionRecord } from './record.js';
 export {
   DEFAULT_LOG_LIMIT,
   currentSession,
@@ -19,6 +20,12 @@ export {
   sessionFiles,
 } from './read.js';
 
-export type { AuditContent, AuditRecord, RecordOptions } from './record.js';
+export type {
+  AuditContent,
+  AuditRecord,
+  EvictionRecord,
+  JudgmentRecord,
+  RecordOptions,
+} from './record.js';
 export type { AuditLog, AuditLogOptions } from './writer.js';
 export type { FollowOptions } from './read.js';
