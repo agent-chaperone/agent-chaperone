@@ -43,3 +43,5 @@ export type {
   ScoreQuestion,
 } from './types.js';
 export type { Validation } from './validate.js';
+export { MAX_ENTRIES as MAX_CACHED_JUDGMENTS, cachingBackend } from './cache.js';
+export type { CacheStats, CachingOptions } from './cache.js';

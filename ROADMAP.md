@@ -63,13 +63,10 @@ Reaching servers that are not a local process, and noticing when a server stops 
 
 **Status:** not started
 
-- Tool-list descriptions screened for instructions, not only compared against what was recorded
 - Elicitation-based confirmation when the client supports it
 - `wrap` command that edits the common client configurations in place
 - OpenRouter and Vercel AI Gateway backends
 - `report` and `replay` commands
-- Judgment cache keyed by content hash
-- `task` command and a hook example that records the current task
 
 ---
 
