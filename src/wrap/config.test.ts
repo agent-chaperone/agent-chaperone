@@ -9,11 +9,20 @@ const filesystem = {
   args: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
 };
 
+/** The entry under a name, which every caller here knows is there. */
 const entryFor = (
   result: { config: Record<string, unknown> },
   name: string,
   section = 'mcpServers',
-) => (result.config[section] as Record<string, Record<string, unknown>>)[name];
+): Record<string, unknown> => {
+  const entry = (result.config[section] as Record<string, Record<string, unknown>> | undefined)?.[
+    name
+  ];
+  if (entry === undefined) {
+    throw new Error(`no entry named ${name} under ${section}`);
+  }
+  return entry;
+};
 
 describe('putting a client config behind the screen', () => {
   it('rewrites a server to run through the proxy', () => {
