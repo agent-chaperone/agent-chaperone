@@ -29,6 +29,7 @@ import { connectHttpUpstream } from '../proxy/http.js';
 import { spawnUpstream, UpstreamStartError, type Upstream } from '../proxy/upstream.js';
 import { createScreeningGate, type Judgment } from '../screening/index.js';
 import { forgetBaseline } from '../toollist/index.js';
+import { clearTask, readTask, writeTask } from '../task/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
@@ -38,6 +39,7 @@ const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
   agent-chaperone show <id>                          Print what was held or withheld
   agent-chaperone approve <id>                       Let one held call through, once
   agent-chaperone trust <server>                     Accept the tools a server now advertises
+  agent-chaperone task [text|--clear]                Say what the agent is working on, or read it back
   agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 
 What follows -- is the upstream MCP server: a command to run, or the http URL of
@@ -118,6 +120,7 @@ export type Command =
   | { readonly kind: 'show'; readonly id: string }
   | { readonly kind: 'approve'; readonly id: string }
   | { readonly kind: 'trust'; readonly server: string }
+  | { readonly kind: 'task'; readonly text?: string; readonly clear: boolean }
   | { readonly kind: 'hook'; readonly side: 'pre' | 'post' }
   | { readonly kind: 'usage' };
 
@@ -136,6 +139,11 @@ export function parseCommand(argv: readonly string[]): Command {
   if (first === 'hook') {
     const side = rest.find((one) => !one.startsWith('-'));
     return side === 'pre' || side === 'post' ? { kind: 'hook', side } : { kind: 'usage' };
+  }
+  if (first === 'task') {
+    const clear = rest.includes('--clear');
+    const text = rest.filter((one) => !one.startsWith('-')).join(' ');
+    return { kind: 'task', clear, ...(text.length === 0 ? {} : { text }) };
   }
   if (first === 'trust') {
     const name = rest.find((one) => !one.startsWith('-'));
@@ -365,6 +373,39 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
  * one the server offers on the next connection, and writing a list nobody is
  * currently offering would record a description that was never seen.
  */
+/**
+ * `task`: what the agent is working on, which is the one thing a screen cannot
+ * read off a tool call.
+ *
+ * Scoped to the working directory, because a task is what someone is doing in
+ * one project. With no argument it prints what is recorded, which is also the
+ * only way to find out that something set one.
+ */
+export function runTask(
+  asked: { readonly text?: string; readonly clear: boolean },
+  io: RunStreams,
+  cwd: string = process.cwd(),
+): number {
+  if (asked.clear) {
+    io.output.write(clearTask(cwd) ? 'Cleared the task.\n' : 'There was no task recorded here.\n');
+    return 0;
+  }
+  if (asked.text === undefined) {
+    const current = readTask(cwd);
+    io.output.write(
+      current === undefined
+        ? 'No task recorded here, so calls are not screened against one.\n'
+        : `${current.text}\n\nRecorded ${current.setAt.slice(0, 16).replace('T', ' ')}, believed until ${current.expiresAt.slice(0, 16).replace('T', ' ')}.\n`,
+    );
+    return 0;
+  }
+  const written = writeTask(cwd, asked.text);
+  io.output.write(
+    `Recorded. Calls here are now screened against it until ${written.expiresAt.slice(0, 16).replace('T', ' ')}.\n`,
+  );
+  return 0;
+}
+
 export function runTrust(server: string, io: RunStreams): number {
   const forgotten = forgetBaseline(server);
   io.output.write(
@@ -505,9 +546,17 @@ export async function runHook(
     storeContent: storeContentFrom(env),
     onProblem: (message) => io.errorOutput.write(`agent-chaperone: ${message}\n`),
   });
+  // A hook runs in the client's working directory, which is the project the
+  // person is working in, so the task recorded there is the one that applies.
+  const task = readTask(process.cwd());
   const answer =
     side === 'pre'
-      ? await runPreHook(payload, { policy, audit, ...(backend === undefined ? {} : { backend }) })
+      ? await runPreHook(payload, {
+          policy,
+          audit,
+          ...(backend === undefined ? {} : { backend }),
+          ...(task === undefined ? {} : { task: task.text }),
+        })
       : await runPostHook(payload, {
           policy,
           audit,
@@ -552,6 +601,9 @@ export async function run(
   }
   if (asked.kind === 'trust') {
     return runTrust(asked.server, io);
+  }
+  if (asked.kind === 'task') {
+    return runTask(asked, io);
   }
   if (asked.kind === 'hook') {
     return runHook(asked.side, io);
@@ -601,9 +653,13 @@ export async function run(
     storeContent: parsed.storeContent,
     onProblem: (message) => io.errorOutput.write(`agent-chaperone: ${message}\n`),
   });
+  // What the user said they were doing, when something recorded it. Read once
+  // at startup: a task that changes mid-session belongs to the next session.
+  const task = readTask(process.cwd());
   const gate = createScreeningGate({
     policy,
     server,
+    ...(task === undefined ? {} : { task: task.text }),
     ...(backend === undefined ? {} : { backend }),
     onJudgment: (judgment: Judgment) => audit.write(judgment),
     // Addressed to the person, so it goes where the person is looking. The
