@@ -24,6 +24,7 @@ agent-chaperone/
     policy/      Schema, thresholds, pure decision functions
     backends/    Model backend interface and implementations
     audit/       JSONL writer, and the commands that read it
+    approvals/   Single-use tokens that release one held call
     hooks/       Adapter for a client's built-in tools               (#11)
   bench/
     src/         Set builders, runner, scorer
@@ -37,8 +38,8 @@ agent-chaperone/
 Directories marked with an issue number do not exist yet and arrive with that
 piece of work. Traffic is screened end to end and every decision is recorded: `cli/` wraps a
 server, `screening/` decides what the relay does with each message, and `audit/`
-writes one line per decision. What is missing is the approve flow that makes a
-held call resumable, and the tools that never go through MCP.
+writes one line per decision. What is missing is the tools that never go
+through MCP.
 
 ## Build Commands
 

@@ -94,6 +94,8 @@ Held calls need a way to be approved without a client-specific UI:
 1. If the client advertises the `elicitation` capability, the proxy sends `elicitation/create` with the reason and the arguments, and forwards the call on `accept`.
 2. Otherwise the proxy returns a tool result with `isError: true` whose text explains what was held, why, and the command to approve it: `agent-chaperone approve <id>`. The agent relays that to the user. The approval writes a one-shot token to the local state directory; the agent retries and the call goes through.
 
+The token is keyed by a fingerprint of the server, the tool and the arguments as they arrived, not as they were redacted. What gets forwarded is the original call, and two calls that differ only inside a run redaction replaced are not the same call: a secret pattern is greedy enough to swallow the path glued to a key, so fingerprinting the redacted form would let one approval release a request to a different resource. The digest is hashed and never stored. What the id stands for is written beside the audit log rather than in it, so approving works when content was not stored and when the log could not be written at all. A deny list is not approvable, because it is a standing rule rather than a question the user was asked.
+
 ## 5. The screens
 
 Each screen is one Jev request: a state object with named fields plus a battery of independent questions. Deterministic checks run before the request and can short-circuit it. Every question below is measured except `policy_violation` and `off_task`, which are marked as such where they appear. Any wording change is re-measured before it ships.
