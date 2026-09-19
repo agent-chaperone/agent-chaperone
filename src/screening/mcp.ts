@@ -187,6 +187,95 @@ export function toolError(id: JsonRpcId, text: string): string {
  * being replaced, go, or the agent receives the notice and the thing the notice
  * says was withheld.
  */
+function fencedSection(text: string): string {
+  return `[agent-chaperone: start of flagged section]\n${text}\n[agent-chaperone: end of flagged section]`;
+}
+
+/**
+ * The same message with a banner in front of its text, and nothing taken away.
+ *
+ * Annotating is not withholding. `withText` exists to replace a result, so it
+ * collapses the content to a single text part: right when the point is that the
+ * agent must not read what was there, wrong when the point is that it should
+ * read it with a warning. Used for an annotation it flattened a resource link
+ * into prose and delivered the link's own uri and name as part of the body.
+ *
+ * So the parts are kept as they are and the banner goes in front of the first
+ * one carrying text. `structuredContent` is still dropped: it is the
+ * machine-readable twin of the content, clients hand it to the model in
+ * preference to the text, and a banner the twin does not carry is a banner the
+ * model may never see.
+ */
+export function withBanner(
+  envelope: Envelope,
+  shape: ResultShape,
+  banner: (fenced: boolean) => string,
+  flagged?: string,
+): string | undefined {
+  // The flagged run is marked where it actually appears, because a section
+  // number that refers to a split the agent never saw names nothing it can
+  // find. When it is not found, the banner says so rather than pointing at a
+  // marker that is not there.
+  const fence = (text: string): { text: string; fenced: boolean } =>
+    flagged !== undefined && flagged !== '' && text.includes(flagged)
+      ? { text: text.replace(flagged, fencedSection(flagged)), fenced: true }
+      : { text, fenced: false };
+
+  if (!isRecord(envelope.value)) {
+    return undefined;
+  }
+
+  if (shape === 'error') {
+    const error = envelope.value['error'];
+    if (!isRecord(error) || typeof error['message'] !== 'string') {
+      return undefined;
+    }
+    const marked = fence(error['message']);
+    return JSON.stringify({
+      ...envelope.value,
+      error: { ...error, message: `${banner(marked.fenced)}\n\n${marked.text}` },
+    });
+  }
+
+  const result = envelope.value['result'];
+  if (!isRecord(result)) {
+    return undefined;
+  }
+  const { structuredContent: _twin, ...keep } = result;
+  const key = shape === 'tool' ? 'content' : 'contents';
+  const parts = keep[key];
+  if (!Array.isArray(parts)) {
+    return undefined;
+  }
+
+  // Marked in whichever part actually holds the flagged run, and the banner
+  // goes in front of the first part carrying text either way.
+  let fenced = false;
+  const fencedParts = parts.map((part) => {
+    if (fenced || !isRecord(part) || typeof part['text'] !== 'string') {
+      return part;
+    }
+    const one = fence(part['text']);
+    fenced = one.fenced;
+    return one.fenced ? { ...part, text: one.text } : part;
+  });
+
+  let placed = false;
+  const marked = fencedParts.map((part) => {
+    if (placed || !isRecord(part) || typeof part['text'] !== 'string') {
+      return part;
+    }
+    placed = true;
+    return { ...part, text: `${banner(fenced)}\n\n${part['text']}` };
+  });
+  if (!placed) {
+    // No text part to put it in front of. Saying nothing is better than
+    // inventing a part whose shape the client may not accept.
+    return undefined;
+  }
+  return JSON.stringify({ ...envelope.value, result: { ...keep, [key]: marked } });
+}
+
 export function withText(envelope: Envelope, shape: ResultShape, text: string): string | undefined {
   if (!isRecord(envelope.value)) {
     return undefined;

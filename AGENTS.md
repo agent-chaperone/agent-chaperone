@@ -31,6 +31,7 @@ agent-chaperone/
     results/     Recorded model responses and reports
   docs/
     design.md    Architecture, screens, policy, audit, privacy
+    hooks.md     Screening a client's own tools, with a worked configuration
     adr/         Architecture decision records
   .github/       CI, release, templates
 ```
@@ -38,8 +39,8 @@ agent-chaperone/
 Directories marked with an issue number do not exist yet and arrive with that
 piece of work. Traffic is screened end to end and every decision is recorded: `cli/` wraps a
 server, `screening/` decides what the relay does with each message, and `audit/`
-writes one line per decision. What is missing is the tools that never go
-through MCP.
+writes one line per decision. Everything the milestone needs is built; what
+is left is the README that first publishes to npm.
 
 ## Build Commands
 

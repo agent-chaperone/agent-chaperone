@@ -45,13 +45,14 @@ import {
   readResultText,
   readToolCall,
   toolError,
+  withBanner,
   withText,
 } from './mcp.js';
 import {
-  annotated,
+  annotatedBanner,
   blockedCall,
   heldCall,
-  partlyUnscreened,
+  partlyUnscreenedBanner,
   quarantined,
   withheldSecret,
 } from './notices.js';
@@ -73,7 +74,7 @@ export const MAX_SCREENED_BLOCKS = 1000;
  * promises. So an unexpected throw is turned into the same failure the modes
  * already know how to handle, and the decision stays with the policy.
  */
-async function ask<B extends Battery>(
+export async function ask<B extends Battery>(
   run: () => Promise<BackendResult<B>>,
 ): Promise<BackendResult<B>> {
   try {
@@ -201,7 +202,7 @@ function defaultId(): string {
  * the calls the deterministic layer already had doubts about, which is the part
  * that costs nothing and does not depend on the model being reachable.
  */
-function onCallFailure(mode: Mode, rules: CallRuleFindings, dangerous: boolean): CallAction {
+export function onCallFailure(mode: Mode, rules: CallRuleFindings, dangerous: boolean): CallAction {
   // The reason is that nothing was judged, not that anything was judged
   // destructive. Saying otherwise would have the tool report a finding it never
   // made, to the agent and to whoever reads the log.
@@ -216,7 +217,7 @@ function onCallFailure(mode: Mode, rules: CallRuleFindings, dangerous: boolean):
     : { kind: 'block', reason: rules.denied_by === undefined ? 'outside-allow-list' : 'deny-list' };
 }
 
-function onResultFailure(mode: Mode): ResultAction {
+export function onResultFailure(mode: Mode): ResultAction {
   return mode === 'strict'
     ? { kind: 'quarantine', probability: 0, severity: { label: 'high', score: 2, uncertain: true } }
     : { kind: 'pass' };
@@ -236,7 +237,7 @@ const UNSURE: ResultAction = {
  * of a model. A result with an unread tail is therefore withheld rather than
  * annotated, because nothing here can say what is in the part nobody read.
  */
-function onTruncated(mode: Mode): ResultAction {
+export function onTruncated(mode: Mode): ResultAction {
   return mode === 'shadow' ? { kind: 'pass' } : UNSURE;
 }
 
@@ -248,7 +249,7 @@ function onTruncated(mode: Mode): ResultAction {
  * screenshot would make the tool unusable, so enforce says so and passes the
  * content on, and only strict refuses it.
  */
-function onUnreadable(mode: Mode): ResultAction {
+export function onUnreadable(mode: Mode): ResultAction {
   if (mode === 'strict') {
     return UNSURE;
   }
@@ -263,7 +264,7 @@ const RESULT_RANK: Record<ResultAction['kind'], number> = {
   quarantine: 3,
 };
 
-function stronger(one: ResultAction, two: ResultAction): ResultAction {
+export function stronger(one: ResultAction, two: ResultAction): ResultAction {
   return RESULT_RANK[two.kind] > RESULT_RANK[one.kind] ? two : one;
 }
 
@@ -514,18 +515,33 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     if (applied.kind === 'pass') {
       return FORWARD;
     }
+    // Annotating keeps the result and adds a warning. Withholding replaces it.
+    // Sending an annotation through the replacement path collapsed the parts
+    // into one block of prose, so a resource link arrived as its own uri and
+    // name run together with the body.
+    if (applied.kind === 'annotate') {
+      const floorOnly = incomplete && applied.probability === 0;
+      const flagged =
+        applied.block === undefined
+          ? undefined
+          : inspection.blocks.find((one) => one.id === applied.block)?.text;
+      const banner = (fenced: boolean): string =>
+        floorOnly
+          ? partlyUnscreenedBanner(tool)
+          : annotatedBanner(fenced ? applied.block : undefined, fenced);
+      const marked = withBanner(envelope, body.shape, banner, flagged);
+      // Nowhere to put a banner means nothing to annotate in place. The result
+      // was judged worth reading, so it goes on rather than being withheld.
+      return marked === undefined ? FORWARD : { kind: 'replace', raw: marked };
+    }
     const replacement =
       applied.kind === 'quarantine'
         ? quarantined(tool, applied.block, id)
-        : applied.kind === 'redact'
-          ? // The regexes already ran before the model was asked, so replacing
-            // the body with their output would change nothing in exactly the
-            // case this action exists for: a shape they did not match. Nothing
-            // in the battery says where it is, so none of it goes out.
-            withheldSecret(tool, id)
-          : incomplete && applied.probability === 0
-            ? partlyUnscreened(tool, inspection.redacted_text)
-            : annotated(inspection.blocks, applied.block);
+        : // The regexes already ran before the model was asked, so replacing
+          // the body with their output would change nothing in exactly the
+          // case this action exists for: a shape they did not match. Nothing
+          // in the battery says where it is, so none of it goes out.
+          withheldSecret(tool, id);
     const raw = withText(envelope, body.shape, replacement);
     return raw === undefined ? FORWARD : { kind: 'replace', raw };
   };

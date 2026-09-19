@@ -81,7 +81,21 @@ A screen is bounded as a whole rather than per attempt: the request, its retries
 
 ### Hooks adapter
 
-Some clients run their own built-in tools (shell, file edits, web fetch) outside MCP. A proxy never sees those. The hooks adapter exposes the same two screens as commands a client's pre-tool and post-tool hooks can call, reading the tool name, arguments, or result from stdin and returning the decision in the shape the client expects. Same policy file, same audit log.
+Some clients run their own built-in tools (shell, file edits, web fetch) outside MCP. A proxy never sees those. The hooks adapter exposes the same two screens as commands a client's pre-tool and post-tool hooks can call, reading the tool name, arguments, or result from stdin and returning the decision in the shape the client expects. Same policy file, same audit log. The worked configuration is in [`hooks.md`](./hooks.md).
+
+Three things about that contract shape the adapter, and they came from reading a client's published hook reference rather than from assuming the proxy carries over.
+
+A held call asks the client to put the question to the user rather than pointing them at `agent-chaperone approve`. The person is already at the keyboard. The command is still named in the text, for a client that shows a reason and carries on.
+
+A forwarded call returns no decision at all rather than allowing it. Allowing skips the permission prompts the user set up for themselves, and a screening tool that quietly auto-approves is taking something away.
+
+A replacement for a result must match that tool's own output shape, and one that does not match is discarded while the original reaches the model, silently. So the replacement is derived from the shape that arrived: the notice goes in the longest run of text, the other text is emptied, and everything that described the shape rather than carrying text is returned untouched. When a result carries no text at all there is nothing to replace that a client would accept, and the adapter says so rather than reporting the result as withheld.
+
+Where that text sits is not a detail. A file read returns the contents nested under an object, and an MCP tool returns a bare array of content blocks, so an adapter that reads only the top level of a result finds the word naming the shape, screens that, and reports the result as screened while the payload goes unread. The whole output is walked instead, and the fields that describe the shape are read but never written into, because a notice written over a discriminator is a replacement the client throws away.
+
+Annotating and withholding are different operations on a result, and they are kept apart. Withholding replaces the body, because the point is that the agent must not read what was there. Annotating returns the result exactly as it came with a banner in front of the text, because the point is that it should read it and know what it is looking at. Running an annotation through the replacement path collapsed a result into a single block of prose, which spliced a file read's own path into the file's contents and flattened an MCP resource link into the body. The flagged run is marked where it actually appears, and when it cannot be found the banner says so rather than naming a section the reader cannot see.
+
+A failed tool is a separate event with a narrower contract: its output arrives as a plain error string and it accepts added context but no replacement. So a failed call's result can be annotated and never withheld, which the notice states rather than implying otherwise. What a post-tool hook may replace differs between clients, and that difference decides whether the post-result screen can withhold a result or only annotate it. Each client is read on its own terms.
 
 ## 4. Modes
 
@@ -270,7 +284,7 @@ One JSONL file per session in the state directory, one line per screened message
 - `agent-chaperone replay --policy <file>` re-applies a policy to recorded judgments.
 - `agent-chaperone task "<text>"` records the current task for the off-task question.
 
-Arguments and results are stored locally with the same redaction applied before they went to the backend. `--no-store-content` keeps only the judgments. A result carrying more secret shapes than one scan will match is not stored at all, because past that point nothing knows which ones were left in.
+Arguments and results are stored locally with the same redaction applied before they went to the backend. `--no-store-content` keeps only the judgments, and `AGENT_CHAPERONE_STORE_CONTENT=0` does the same for the hook commands, which a client launches with a fixed command line and no flags to pass. A result carrying more secret shapes than one scan will match is not stored at all, because past that point nothing knows which ones were left in.
 
 The file and its directory are created for the owner alone. A log that cannot be written says so once and stops trying: a firewall that refuses to relay because its disk filled up has turned a full disk into an outage.
 
