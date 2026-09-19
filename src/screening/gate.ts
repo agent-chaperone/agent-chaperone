@@ -46,7 +46,7 @@ import {
   readCallAnswers,
   readResultAnswers,
 } from '../screens/index.js';
-import { reviewToolList } from '../toollist/index.js';
+import { ToolListAssembly, reviewToolList } from '../toollist/index.js';
 import { buildToolListScreen, describableText, readToolListAnswers } from '../screens/index.js';
 import {
   RESOURCE_READ,
@@ -67,6 +67,7 @@ import {
   toolDescriptionSteers,
   toolDescriptionsUnscreened,
   toolListChanged,
+  toolListTooLarge,
   withheldSecret,
 } from './notices.js';
 
@@ -607,6 +608,9 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
    * for a firewall: it would let a bug here quietly undo what `strict` promises.
    * So a throw is handled the way an unreachable backend is, by the mode.
    */
+  // One server per proxy, so one listing in progress and no key to get wrong.
+  const listing = new ToolListAssembly();
+
   /**
    * Compare an advertised tool list against the one this server was first seen
    * with, report what moved, and ask about the descriptions that are new or
@@ -617,9 +621,19 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
    * arrived and any finding reaches the person afterwards. That is the whole
    * reason this returns nothing and is not awaited.
    */
-  const reviewTools = (envelope: Envelope): void => {
+  const reviewTools = (envelope: Envelope, request: PendingRequest | undefined): void => {
     const result = (envelope.value as { result?: unknown } | undefined)?.result;
     if (result === undefined) {
+      return;
+    }
+    // A listing arrives in pages. Nothing is compared until the last one, or a
+    // server would have its other pages reported as removed on every connection.
+    const assembled = listing.add(request?.envelope.value, result);
+    if (assembled.kind === 'incomplete') {
+      return;
+    }
+    if (assembled.kind === 'abandoned') {
+      options.onNotice?.(toolListTooLarge(server, assembled.reason));
       return;
     }
     // Named apart from the module's own `ask`, which it calls: the shadowing
@@ -637,7 +651,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
             return asked.ok ? readToolListAnswers(asked.answers).description_steers : undefined;
           };
 
-    void reviewToolList(server, result, {
+    void reviewToolList(server, assembled.tools, {
       threshold: policy.thresholds.tool_list.report_steers,
       ...(askAbout === undefined ? {} : { ask: askAbout }),
     })
@@ -710,7 +724,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     if (request?.method === TOOLS_LIST) {
       if (shouldScreen(policy, server, 'tool_list')) {
         try {
-          reviewTools(envelope);
+          reviewTools(envelope, request);
         } catch {
           // Recording what a server advertises is a convenience, not a screen.
           // A state directory that cannot be written must not end the session.

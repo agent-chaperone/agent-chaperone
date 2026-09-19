@@ -109,7 +109,8 @@ describe('recording and comparing across sessions', () => {
     rmSync(state, { recursive: true, force: true });
   });
 
-  const list = (...tools: unknown[]) => ({ tools });
+  /** A whole listing, already assembled: what reviewToolList now takes. */
+  const list = (...tools: unknown[]) => tools as never[];
 
   it('learns the first list it sees and reports nothing', async () => {
     const review = await reviewToolList('files', list(tool('read_file', 'Read a file')));
@@ -196,10 +197,10 @@ describe('recording and comparing across sessions', () => {
   });
 
   it('records an empty list rather than treating it as nothing to record', async () => {
-    const first = await reviewToolList('empty', { tools: [] });
+    const first = await reviewToolList('empty', []);
     expect(first.learned).toBe(true);
 
-    const again = await reviewToolList('empty', { tools: [tool('surprise', 'appeared later')] });
+    const again = await reviewToolList('empty', [tool('surprise', 'appeared later')]);
     expect(again.changes).toEqual([{ kind: 'added', name: 'surprise' }]);
   });
 

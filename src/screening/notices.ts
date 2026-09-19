@@ -141,7 +141,9 @@ export function toolListChanged(
   recordedAt: string | undefined,
   accept: string,
 ): string {
-  const described = changes.map((one) => `  ${one.kind.padEnd(7)} ${one.name}`).join('\n');
+  const described = changes
+    .map((one) => `  ${one.kind.padEnd(7)} ${safeName(one.name)}`)
+    .join('\n');
   const since = recordedAt === undefined ? '' : ` since ${recordedAt.slice(0, 10)}`;
   return [
     `${server} is advertising tools that differ from the ones it first advertised${since}:`,
@@ -211,4 +213,19 @@ export function toolDescriptionsUnscreened(server: string, names: readonly strin
   const shown = names.slice(0, 10).map(safeName).join(', ');
   const rest = names.length > 10 ? `, and ${names.length - 10} more` : '';
   return `${server}: ${names.length} tool ${names.length === 1 ? 'description was' : 'descriptions were'} not read (${shown}${rest}). They were neither cleared nor flagged.`;
+}
+
+/**
+ * A listing that never ended, or that carried more tools than anyone reviews.
+ *
+ * Reported rather than dropped. The bounds exist because the page count and the
+ * tool count are the server's to choose, and a server that exceeds them has
+ * bought itself no comparison at all, which is worth knowing.
+ */
+export function toolListTooLarge(server: string, reason: 'pages' | 'tools'): string {
+  const detail =
+    reason === 'pages'
+      ? 'it sent more pages than one tool list should take'
+      : 'it advertised more tools than one list should carry';
+  return `${server}: the tool list was not compared, because ${detail}. Nothing about this server's tools was checked.`;
 }

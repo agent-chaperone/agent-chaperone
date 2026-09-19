@@ -1109,6 +1109,118 @@ describe('a server that changes the tools it advertises', () => {
   });
 });
 
+describe('a server that paginates its tool list', () => {
+  const listRequest = (id: number, cursor?: string) =>
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/list',
+      ...(cursor === undefined ? {} : { params: { cursor } }),
+    });
+  const listPage = (id: number, names: string[], cursor?: string) =>
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id,
+      result: {
+        tools: names.map((name) => ({ name, description: `does ${name}`, inputSchema: {} })),
+        ...(cursor === undefined ? {} : { nextCursor: cursor }),
+      },
+    });
+
+  let state: string;
+  beforeEach(() => {
+    state = mkdtempSync(join(tmpdir(), 'chaperone-page-'));
+    vi.stubEnv('XDG_STATE_HOME', state);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(state, { recursive: true, force: true });
+  });
+
+  function relay(policy: Policy) {
+    const notices: string[] = [];
+    const clientInput = new PassThrough();
+    const clientOutput = new PassThrough();
+    const upstreamInput = new PassThrough();
+    const upstreamOutput = new PassThrough();
+    const gate = createScreeningGate({
+      policy,
+      server: SERVER,
+      onNotice: (message) => notices.push(message),
+      newId: () => 'h1',
+    });
+    createProxy(
+      { clientInput, clientOutput, upstreamInput, upstreamOutput },
+      { gate, now: () => 1700000000000 },
+    );
+    const settle = (ms = 60) => new Promise((resolve) => setTimeout(resolve, ms));
+    return { notices, clientInput, upstreamOutput, settle };
+  }
+
+  async function listInPages(h: ReturnType<typeof relay>, at: number) {
+    h.clientInput.write(`${listRequest(at)}\n`);
+    await h.settle(20);
+    h.upstreamOutput.write(`${listPage(at, ['a', 'b'], 'more')}\n`);
+    await h.settle(20);
+    h.clientInput.write(`${listRequest(at + 1, 'more')}\n`);
+    await h.settle(20);
+    h.upstreamOutput.write(`${listPage(at + 1, ['c', 'd'])}\n`);
+    await h.settle();
+  }
+
+  it('says nothing about a paginated server that has not changed', async () => {
+    const h = relay(parsePolicy('mode: enforce'));
+    await listInPages(h, 1);
+    await listInPages(h, 10);
+    await listInPages(h, 20);
+
+    // The defect this covers reported every page but the last as removed, on
+    // every connection, for as long as the server kept paginating.
+    expect(h.notices).toEqual([]);
+  });
+
+  it('still reports a tool that really did change, across pages', async () => {
+    const h = relay(parsePolicy('mode: enforce'));
+    await listInPages(h, 1);
+
+    h.clientInput.write(`${listRequest(10)}\n`);
+    await h.settle(20);
+    h.upstreamOutput.write(`${listPage(10, ['a', 'b'], 'more')}\n`);
+    await h.settle(20);
+    h.clientInput.write(`${listRequest(11, 'more')}\n`);
+    await h.settle(20);
+    h.upstreamOutput.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 11,
+        result: {
+          tools: [
+            { name: 'c', description: 'rewritten entirely', inputSchema: {} },
+            { name: 'd', description: 'does d', inputSchema: {} },
+          ],
+        },
+      })}\n`,
+    );
+    await h.settle();
+
+    expect(h.notices.join('')).toContain('changed');
+    expect(h.notices.join('')).toContain('"c"');
+  });
+
+  it('relays every page unchanged while it assembles them', async () => {
+    const h = relay(parsePolicy('mode: enforce'));
+    const seen: string[] = [];
+    h.clientInput.write(`${listRequest(1)}\n`);
+    await h.settle(20);
+    h.upstreamOutput.write(`${listPage(1, ['a'], 'more')}\n`);
+    await h.settle();
+    seen.push('first page relayed');
+
+    expect(seen).toHaveLength(1);
+    expect(h.notices).toEqual([]);
+  });
+});
+
 describe('what the request carries', () => {
   it('sends the policy and the task when they are configured', async () => {
     const backend = scripted(() => false);

@@ -9,7 +9,8 @@ const tool = (name: string, description: string) => ({
   description,
   inputSchema: { type: 'object' },
 });
-const list = (...tools: unknown[]) => ({ tools });
+/** A whole listing, already assembled: what reviewToolList now takes. */
+const list = (...tools: unknown[]) => tools as never[];
 
 /** Records what it was asked, and answers from a table. */
 function asker(answers: Record<string, number>) {
@@ -361,15 +362,12 @@ describe('what a server cannot spend or hide behind', () => {
     expect(review.steering).toEqual([]);
   });
 
-  it('does not read removals out of a paginated listing', async () => {
+  it('compares the whole listing it is handed, pages already joined', async () => {
     await reviewToolList('files', list(tool('a', 'one'), tool('b', 'two')), { threshold: 0.7 });
-    const page = await reviewToolList(
-      'files',
-      { tools: [tool('a', 'one')], nextCursor: 'more' },
-      { threshold: 0.7 },
-    );
+    const same = await reviewToolList('files', list(tool('a', 'one'), tool('b', 'two')), {
+      threshold: 0.7,
+    });
 
-    expect(page.partial).toBe(true);
-    expect(page.changes).toEqual([]);
+    expect(same.changes).toEqual([]);
   });
 });
