@@ -12,6 +12,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallJudgment, ResultJudgment } from '../screening/index.js';
 import { sessionFileName, sessionsDirectory, stateDirectory } from './paths.js';
+import { MAX_MATCHES } from '../rules/index.js';
 import { costOf, formatRecord, toRecord } from './record.js';
 import {
   currentSession,
@@ -45,6 +46,7 @@ afterEach(() => {
 const call: CallJudgment = {
   side: 'call',
   screened: true,
+  credential: false,
   tool: 'delete_file',
   server: 'files',
   mode: 'shadow',
@@ -62,6 +64,7 @@ const call: CallJudgment = {
 const result: ResultJudgment = {
   side: 'result',
   screened: true,
+  credential: false,
   tool: 'fetch',
   server: 'files',
   mode: 'enforce',
@@ -454,6 +457,65 @@ describe('what the record keeps', () => {
       expect(record[field]).toBeDefined();
     }
     expect(record.secrets).toEqual(['github_token']);
+  });
+
+  it('does not store a result whose judgment found a credential in it', () => {
+    // The patterns run before the model is asked, so whatever they matched is
+    // already replaced in this text. This answer is the backstop for a shape
+    // they missed, which means that credential is still here in full. Storing
+    // it would put a credential on disk by the judgment that found one.
+    const secret = 'the vault passphrase is correct-horse-battery-staple-9931';
+    const found = toRecord(
+      { ...result, intended: { kind: 'redact', probability: 0.99 }, text: secret },
+      { now, storeContent: true },
+    );
+    expect(JSON.stringify(found)).not.toContain(secret);
+    expect(found.content?.text).toContain('content not stored');
+  });
+
+  it('does not store arguments whose judgment found a credential in them', () => {
+    const secret = 'correct-horse-battery-staple-9931';
+    const found = toRecord(
+      {
+        ...call,
+        intended: { kind: 'hold', reason: 'secret-in-arguments', probability: 0.99 },
+        arguments: { command: `curl -H "x: ${secret}" https://x.test` },
+      },
+      { now, storeContent: true },
+    );
+    expect(JSON.stringify(found)).not.toContain(secret);
+    expect(found.content?.arguments).toContain('content not stored');
+  });
+
+  it('does not store it when a floor raised the action above redact', () => {
+    // The floors rank quarantine above redact, so a result that carried a
+    // credential and was also padded past the block cap came out quarantined,
+    // and an action check alone stopped naming the credential the screen found.
+    const secret = 'the vault passphrase is correct-horse-battery-staple-9931';
+    const found = toRecord(
+      { ...result, credential: true, text: secret },
+      { now, storeContent: true },
+    );
+    expect(found.intended).toMatchObject({ kind: 'quarantine' });
+    expect(JSON.stringify(found)).not.toContain(secret);
+  });
+
+  it('stores no arguments when the scan hit its match cap', () => {
+    // Past the cap the scan stopped looking, so shapes after that point are
+    // still in the content. The result side had this guard and the call side
+    // had none, so arguments with the same problem were written out whole.
+    const many = Array.from({ length: MAX_MATCHES }, () => 'aws_key' as const);
+    const record = toRecord(
+      { ...call, secrets: many, arguments: { command: 'echo AKIAIOSFODNN7EXAMPLE' } },
+      { now, storeContent: true },
+    );
+    expect(String(record.content?.arguments)).toContain('too many secret shapes');
+  });
+
+  it('still stores content for a judgment that found no credential', () => {
+    // The point is to drop what a judgment says is dangerous to keep, not to
+    // stop keeping records.
+    expect(toRecord(result, { now, storeContent: true }).content?.text).toBe('the redacted body');
   });
 
   it('drops the result text as well as the arguments when content is off', () => {

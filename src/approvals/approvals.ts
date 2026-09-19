@@ -49,6 +49,12 @@ export interface Hold {
   readonly fingerprint: string;
   readonly heldAt: string;
   readonly expiresAt: string;
+  /**
+   * The screen found a credential in this call's arguments. Carried so the
+   * approved retry does not write to disk what the held original kept out of it:
+   * approving releases the call, not the record of what was in it.
+   */
+  readonly credential?: boolean;
 }
 
 export interface Approval {
@@ -57,6 +63,12 @@ export interface Approval {
   readonly fingerprint: string;
   readonly grantedAt: string;
   readonly expiresAt: string;
+  /**
+   * The screen found a credential in this call's arguments. Carried so the
+   * approved retry does not write to disk what the held original kept out of it:
+   * approving releases the call, not the record of what was in it.
+   */
+  readonly credential?: boolean;
 }
 
 export function approvalsDirectory(env?: NodeJS.ProcessEnv): string {
@@ -108,6 +120,8 @@ function safeName(value: string): string | undefined {
 }
 
 export interface HoldOptions {
+  /** The screen found a credential in the arguments this hold is for. */
+  readonly credential?: boolean;
   readonly now?: () => Date;
   readonly ttlMs?: number;
   readonly env?: NodeJS.ProcessEnv;
@@ -133,6 +147,7 @@ export function recordHold(
     fingerprint,
     heldAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + (options.ttlMs ?? HOLD_TTL_MS)).toISOString(),
+    ...(options.credential === true ? { credential: true } : {}),
   };
   try {
     writeOwned(join(holdsDirectory(options.env), `${name}.json`), hold);
@@ -177,6 +192,7 @@ export function grantApproval(hold: Hold, options: GrantOptions = {}): Approval 
     fingerprint: hold.fingerprint,
     grantedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + (options.ttlMs ?? DEFAULT_TTL_MS)).toISOString(),
+    ...(hold.credential === true ? { credential: true } : {}),
   };
   writeOwned(join(approvalsDirectory(options.env), `${name}.json`), approval);
   return approval;

@@ -1018,6 +1018,39 @@ describe('what the notices actually say', () => {
     expect(h.client()).toContain('delete_*');
   });
 
+  it('records that a credential was found even when a floor outranks the redaction', async () => {
+    // The floors rank quarantine above redact, so a result that carried a
+    // credential and also something the screen could not read came out
+    // quarantined. Reading the credential off the action alone then stopped
+    // naming it, and the audit log stored it in full.
+    const passphrase = 'the vault passphrase is correct-horse-battery-staple-9931';
+    const h = live(
+      parsePolicy('mode: strict'),
+      scripted(() => false, 0.99),
+    );
+    h.clientInput.write(`${call(1, 'fetch', {})}\n`);
+    await h.settle(40);
+
+    h.upstreamOutput.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          content: [
+            { type: 'text', text: passphrase },
+            { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+          ],
+        },
+      })}\n`,
+    );
+    await h.settle();
+
+    expect(h.resultJudgment()).toMatchObject({
+      intended: { kind: 'quarantine' },
+      credential: true,
+    });
+  });
+
   it('keeps the parts a result came in when it only annotates them', async () => {
     // Annotating is not withholding. Replacing the content with one block of
     // prose collapsed a resource link into the body, so the agent read the

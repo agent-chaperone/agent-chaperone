@@ -7,7 +7,14 @@ export {
   policySchema,
 } from './schema.js';
 export type { CallThresholds, Mode, Policy, ResultThresholds, ServerPolicy } from './schema.js';
-export { assessSeverity, decidePostResult, decidePreCall, shouldScreen } from './decisions.js';
+export {
+  assessSeverity,
+  credentialInArguments,
+  credentialInResult,
+  decidePostResult,
+  decidePreCall,
+  shouldScreen,
+} from './decisions.js';
 export type {
   CallAction,
   CallAnswers,

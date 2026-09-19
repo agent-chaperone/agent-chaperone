@@ -7,6 +7,7 @@ const JWT =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk';
 const SLACK = 'xoxb-123456789012-abcdefghijklmnop';
 const PRIVATE_KEY = '-----BEGIN RSA PRIVATE KEY-----';
+const PROVIDER = `sk-ant-api03-${'A'.repeat(60)}`;
 
 describe('finding each kind', () => {
   const cases: readonly (readonly [string, string])[] = [
@@ -18,6 +19,7 @@ describe('finding each kind', () => {
     ['generic_api_key', 'api_key = "s3cret_value_that_is_long"'],
     ['bearer_token', 'Authorization: Bearer abcdefghijklmnop1234567890'],
     ['connection_string', 'postgres://admin:sup3rS3cretPw@db.internal:5432/prod'],
+    ['provider_key', `using ${PROVIDER} now`],
   ];
 
   for (const [kind, text] of cases) {
@@ -40,9 +42,85 @@ describe('not firing on ordinary text', () => {
       'commit a1b2c3d4e5f6 by someone on a Tuesday',
       'AKIA is a prefix but this is not a key',
       'ghp_tooShort',
+      // A documented prefix is only a credential with the issuer's own run
+      // behind it. These are the shapes that would be redacted as secrets if
+      // the patterns guessed rather than pinning each issuer's format.
+      'sk-short',
+      'the sdk-version is 2',
+      'ask-the-user-before-running-this-command-please',
+      'AIzaTooShortToBeAGoogleKey',
+      'npm_install_is_not_a_token',
+      'commit 0123456789abcdef0123456789abcdef01234567 landed',
+      'sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae',
     ]) {
       expect(findSecrets(text)).toEqual([]);
     }
+  });
+
+  it('finds a credential that carries its own prefix, wherever it sits', () => {
+    // `generic_api_key` only matches next to a field name it recognises, so
+    // these three all went through untouched: in prose, under a JSON key this
+    // file has never heard of, and on its own.
+    for (const text of [PROVIDER, `{"key": "${PROVIDER}"}`, `using ${PROVIDER} now`]) {
+      expect(redactText(text).text).not.toContain(PROVIDER);
+    }
+  });
+
+  it.each([['sk-svcacct-'], ['sk-admin-'], ['sk-proj-'], ['sk-ant-api03-'], ['sk-']])(
+    'covers the %s prefix its issuer documents',
+    (prefix) => {
+      // The bare `sk-` run cannot reach past a dash, so a named sub-prefix needs
+      // its own alternative or it matches nothing at all.
+      const key = `${prefix}${'A'.repeat(156)}`;
+      expect(findSecrets(`export KEY of ${key} for the run`).map((one) => one.kind)).toContain(
+        'provider_key',
+      );
+    },
+  );
+
+  it('redacts an over-long key whole rather than leaving a tail', () => {
+    // A bound shorter than the run means the head is replaced and the rest is
+    // still there, which reads as redacted and is not.
+    const long = `sk-${'A'.repeat(600)}`;
+    expect(redactText(long).text).not.toContain('AAAA');
+  });
+
+  it('finds a credential named by its key rather than by the string it sits in', () => {
+    // Tool arguments arrive structured, so the field name is a JSON key and the
+    // value is scanned on its own. The field-name pattern never saw the two
+    // together, which made this the ordinary shape rather than an edge case.
+    const redacted = redactJson({ headers: { api_key: 'AAAABBBBCCCCDDDDEEEEFFFF' } });
+    expect(JSON.stringify(redacted.value)).not.toContain('AAAABBBBCCCCDDDDEEEEFFFF');
+    expect(redacted.secrets).toContain('generic_api_key');
+  });
+
+  it('leaves a key whose value reads as prose alone', () => {
+    const redacted = redactJson({ description: 'the api_key is rotated every quarter' });
+    expect(redacted.secrets).toEqual([]);
+  });
+
+  it('still finds a prefixed credential in text padded with cheaper matches', () => {
+    // The match cap is spent in pattern order and skips whole patterns once it
+    // is reached, so whichever pattern sits last is the first to be starved.
+    const filler = Array.from(
+      { length: 10_500 },
+      (_, at) => `AKIAIOSFODNN7EXAMP${String.fromCharCode(65 + (at % 26))}`,
+    ).join(' ');
+    const key = `sk-ant-api03-${'A'.repeat(95)}`;
+    expect(redactText(`${filler}\nmy key is ${key}`).text).not.toContain(key);
+  });
+
+  it('does not match a prefix that follows a dash', () => {
+    // A word boundary would allow this: the dash is a non-word character, so
+    // `\b` opens a match right after it. The lookbehind is over the same class
+    // the run uses, which is what makes a buried shape stay buried.
+    expect(findSecrets(`x-sk-${'A'.repeat(40)}`)).toEqual([]);
+  });
+
+  it('does not match a prefix buried inside a longer token', () => {
+    // The rule the file already keeps: a hash that happens to contain a
+    // credential shape is a hash, not a credential.
+    expect(findSecrets(`x1234${PROVIDER}`)).toEqual([]);
   });
 });
 

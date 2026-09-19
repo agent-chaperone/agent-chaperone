@@ -30,6 +30,7 @@ export const SECRET_KINDS = [
   'bearer_token',
   'connection_string',
   'generic_api_key',
+  'provider_key',
 ] as const;
 
 export type SecretKind = (typeof SECRET_KINDS)[number];
@@ -47,6 +48,41 @@ const SECRET_FIELD =
   // `secret[_-]?(?:access[_-]?)?key` already covers aws_secret_access_key, so
   // there is no separate alternative for it.
   '(?:secret[_-]?(?:access[_-]?)?key|api[_-]?key|apikey|access[_-]?token|auth[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?token|passwd|password)';
+
+/**
+ * Credentials that carry a prefix the issuer documents.
+ *
+ * `generic_api_key` only matches a credential sitting next to a field name it
+ * recognises, so `ANTHROPIC_API_KEY=sk-ant-...` was replaced and the same key in
+ * prose, in a log line, or under a JSON key this file has never heard of was
+ * not. A documented prefix followed by a long opaque run is a credential on its
+ * own evidence and does not need a label beside it to be one.
+ *
+ * Each alternative pins the issuer's own shape rather than guessing, because the
+ * point of the note above about buried shapes is that a hash must not be
+ * redacted as a secret. The lookbehind is over the same class the run uses, for
+ * the reason the header gives: a word boundary in front of a class holding `-`
+ * opens a start position at every dash and scans far from it.
+ */
+const PROVIDER_KEY = [
+  // The named sub-prefixes come first and carry a class holding the dash,
+  // because the bare `sk-` run below cannot reach past one: it would stop after
+  // `svcacct` and never reach the length it needs.
+  'sk-ant-[A-Za-z0-9_-]{24,4096}',
+  'sk-or-v1-[A-Za-z0-9]{32,4096}',
+  'sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{24,4096}',
+  'sk-[A-Za-z0-9]{32,4096}',
+  'sk_(?:live|test)_[A-Za-z0-9]{16,4096}',
+  'rk_(?:live|test)_[A-Za-z0-9]{16,4096}',
+  'AIza[A-Za-z0-9_-]{35}',
+  'xai-[A-Za-z0-9]{32,4096}',
+  'glpat-[A-Za-z0-9_-]{20,4096}',
+  'lin_api_[A-Za-z0-9]{32,4096}',
+  'hf_[A-Za-z0-9]{32,4096}',
+  'npm_[A-Za-z0-9]{36}',
+  'dop_v1_[a-f0-9]{64}',
+  'shpat_[a-f0-9]{32}',
+].join('|');
 
 export const SECRET_PATTERNS: readonly SecretPattern[] = [
   { kind: 'aws_key', pattern: /\b(?:AKIA|ASIA|AGPA|AIDA|AROA|ANPA)[0-9A-Z]{16}\b/g },
@@ -72,6 +108,15 @@ export const SECRET_PATTERNS: readonly SecretPattern[] = [
     // The password inside a URL. Only the password is replaced, so the host and
     // database still read sensibly in the audit log.
     pattern: /\b[a-z][a-z0-9+.-]{1,20}:\/\/[^\s:@/]{1,64}:([^\s@/]{4,256})@/gi,
+  },
+  {
+    kind: 'provider_key',
+    // Ahead of the field-name pattern on purpose. The match cap is spent in
+    // pattern order and skips whole patterns once it is reached, so the last
+    // entry is the first to be starved, and content that pads itself with cheap
+    // matches is exactly the adversarial case this exists for. This is the one
+    // pattern that needs no field name beside the credential to find it.
+    pattern: new RegExp(`(?<![A-Za-z0-9_-])(?:${PROVIDER_KEY})`, 'g'),
   },
   {
     kind: 'generic_api_key',
@@ -173,6 +218,20 @@ export const MAX_JSON_DEPTH = 64;
  * into one nested string means nothing to a reader of the audit log, and the
  * string it indexed is not what any caller receives.
  */
+/**
+ * A field name that says its value is the credential, matched anywhere in a key.
+ *
+ * `generic_api_key` needs the name and the value in one string, which is how
+ * they arrive in a shell command or a header line. In structured tool arguments
+ * they are not: the name is the JSON key and the value is scanned on its own, so
+ * `{"headers": {"api_key": "..."}}` matched nothing at all. That is the ordinary
+ * shape of a tool call, so it was the common case rather than an edge one.
+ */
+const SECRET_FIELD_NAME = new RegExp(SECRET_FIELD, 'i');
+
+/** Opaque enough to be a credential rather than a sentence that happens to sit under that key. */
+const OPAQUE_VALUE = /^[A-Za-z0-9_\-./+=]{16,4096}$/;
+
 export function redactJson(
   value: unknown,
   kinds?: readonly SecretKind[],
@@ -205,10 +264,29 @@ export function redactJson(
     }
 
     const out: Record<string, unknown> = {};
+    const named = kinds === undefined || kinds.includes('generic_api_key');
     for (const [key, nested] of Object.entries(input)) {
       const redactedKey = redactText(key, kinds);
       for (const secret of redactedKey.secrets) {
         secrets.push(secret.kind);
+      }
+      // The key names the value, so the value is the credential. Read here
+      // rather than in the pattern, because the pattern only ever sees one
+      // string and these two arrive as two.
+      if (
+        named &&
+        typeof nested === 'string' &&
+        SECRET_FIELD_NAME.test(key) &&
+        OPAQUE_VALUE.test(nested)
+      ) {
+        secrets.push('generic_api_key');
+        Object.defineProperty(out, redactedKey.text, {
+          value: placeholder('generic_api_key'),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+        continue;
       }
       // defineProperty rather than assignment, so a key of `__proto__` becomes
       // an ordinary property instead of silently setting the prototype, and a

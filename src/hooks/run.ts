@@ -28,8 +28,15 @@ import type {
   ResultAction,
   ResultAnswers,
 } from '../policy/index.js';
-import { decidePostResult, decidePreCall, policyForServer, shouldScreen } from '../policy/index.js';
-import { MAX_MATCHES, inspectResult, inspectToolCall } from '../rules/index.js';
+import {
+  credentialInArguments,
+  credentialInResult,
+  decidePostResult,
+  decidePreCall,
+  policyForServer,
+  shouldScreen,
+} from '../policy/index.js';
+import { inspectResult, inspectToolCall } from '../rules/index.js';
 import {
   buildPostResultScreens,
   buildPreCallScreen,
@@ -183,6 +190,10 @@ export async function runPreHook(text: string, options: HookOptions): Promise<st
           };
   const applied = decided.applied;
 
+  // An approved retry asks nothing, so the answers are empty. The conclusion
+  // travels on the approval instead.
+  const credential = credentialInArguments(answers, policy) || approval?.credential === true;
+
   const id = idFor(options);
   options.audit?.write({
     side: 'call',
@@ -192,6 +203,7 @@ export async function runPreHook(text: string, options: HookOptions): Promise<st
     mode: policy.mode,
     intended: decided.intended,
     applied,
+    credential,
     answers,
     rules: findings,
     secrets: rules.secrets,
@@ -213,7 +225,7 @@ export async function runPreHook(text: string, options: HookOptions): Promise<st
     });
   }
   if (approvals) {
-    recordHold(id, server, call.tool, fingerprint);
+    recordHold(id, server, call.tool, fingerprint, { credential });
   }
   // The person is at the keyboard, so the client is asked to put the question in
   // front of them rather than sending them to another terminal. The command is
@@ -340,6 +352,7 @@ export async function runPostHook(text: string, options: HookOptions): Promise<s
     mode: policy.mode,
     intended,
     applied,
+    credential: credentialInResult(answers, policy),
     answers,
     rules: findings,
     secrets: inspection.secrets,
@@ -350,10 +363,7 @@ export async function runPostHook(text: string, options: HookOptions): Promise<s
       parts: body.unreadable,
     },
     hidden: inspection.hidden_kinds,
-    text:
-      inspection.secrets.length >= MAX_MATCHES
-        ? '[content not stored: too many secret shapes to redact them all]'
-        : inspection.redacted_text,
+    text: inspection.redacted_text,
     ...(usage === undefined ? {} : { usage }),
     ...(failure === undefined ? {} : { failure }),
     id,
