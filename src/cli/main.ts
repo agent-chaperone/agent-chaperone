@@ -22,7 +22,7 @@ import {
 import { grantApproval, readHold, sweepApprovals } from '../approvals/index.js';
 import { eventOf, postResponse, preResponse, runPostHook, runPreHook } from '../hooks/index.js';
 import { sanitizeMessage } from '../backends/index.js';
-import { createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
+import { cachingBackend, createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
 import { PolicyError, parsePolicy, type Policy } from '../policy/index.js';
 import { createProxy } from '../proxy/proxy.js';
 import { connectHttpUpstream } from '../proxy/http.js';
@@ -638,7 +638,10 @@ export async function run(
   // host, which is what a person writing a policy section for it would write.
   const server =
     parsed.server ?? (target.kind === 'url' ? target.url.host : basename(parsed.command));
-  const backend = hasTypeSafeKey() ? createTypeSafeBackend() : undefined;
+  // Wrapped so a question the session has already answered is not asked again.
+  // An agent rereading one file is the same state and the same battery every
+  // time, which is the same request.
+  const backend = hasTypeSafeKey() ? cachingBackend(createTypeSafeBackend()) : undefined;
   if (backend === undefined) {
     io.errorOutput.write(
       'agent-chaperone: TYPESAFE_API_KEY is not set, so only the deterministic rules will run.\n',

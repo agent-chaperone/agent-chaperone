@@ -23,6 +23,8 @@ Read this part before the rest.
 npm install -g agent-chaperone
 ```
 
+A question the session has already answered is not asked again. An agent rereading one file is the same state and the same battery every time, which is the same request, and a cached answer records that it cost nothing rather than charging for a request nobody sent. The cache lives for the session, because content does not.
+
 Screening needs `TYPESAFE_API_KEY` in the environment. Without it the deterministic rules still run, which is the allow and deny lists and the secret patterns, and every judgment records that no model was asked.
 
 ## Wrapping an MCP server
