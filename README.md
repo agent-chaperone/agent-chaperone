@@ -118,13 +118,14 @@ agent-chaperone approve b2c4e6a8f0
 
 The token names that one call rather than that tool, keyed by a digest of the server, the tool and the arguments as they arrived. Agreeing to a write to one path does not release a write to another. It is spent the moment it is used, and it expires. A tool the policy denies outright is not approvable: that is a standing rule you wrote, not a question you were asked, and the command says so and points at the policy file.
 
-## The three screens
+## The two screens
 
 - **Pre-call.** Before a tool call is forwarded: is it destructive, does it send private data or secrets outside, does it break the policy written in plain English, how bad would it be if it ran.
 - **Post-result.** Before a tool result reaches the agent: does the content try to instruct the AI reading it, which block does it, does it expose a secret, how much harm would following it cause.
-- **Tool list.** When a server advertises its tools: do any descriptions carry instructions for the model beyond describing the tool, and have they changed since you last approved the server.
 
 Each screen combines deterministic rules in code with a small battery of typed, calibrated judgments from [Jev](https://docs.typesafe.ai), TypeSafe's System One model.
+
+Screening the tool list itself is not in this version. A server's own descriptions of its tools reach the agent unscreened, so a description that carries an instruction, or one that changes after you decided to trust the server, is not caught today.
 
 ## Commands
 
@@ -165,7 +166,7 @@ Methodology, per-threshold tables, the misses, and the raw recorded model respon
 
 ## Design
 
-- [`docs/design.md`](./docs/design.md): architecture, the three screens and their questions, policy file, audit log, privacy, and performance budget.
+- [`docs/design.md`](./docs/design.md): architecture, the screens and their questions, policy file, audit log, privacy, and performance budget.
 - [`docs/hooks.md`](./docs/hooks.md): screening a client's own tools.
 - [`docs/adr/`](./docs/adr/): the decisions behind the design and why.
 - [`ROADMAP.md`](./ROADMAP.md): what lands in which version.

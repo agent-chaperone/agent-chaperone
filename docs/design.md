@@ -6,7 +6,7 @@ agent-chaperone is a transparent proxy for MCP tool traffic. This document is th
 
 It is:
 
-- A transparent MCP proxy. Everything that is not a tool call, a tool result, a tool list, or a resource read passes through unchanged.
+- A transparent MCP proxy. Everything that is not a tool call, a tool result, or a resource read passes through unchanged, and that includes the tool list.
 - Defense in depth. Deterministic rules run first and are cheap. Jev adds semantic judgment where rules cannot express the condition.
 - Calibrated. Each check returns a probability. Thresholds live in the policy file, and the audit log records every probability, so thresholds can be tuned on real traffic without re-running inference.
 
