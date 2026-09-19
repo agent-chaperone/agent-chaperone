@@ -230,3 +230,14 @@ export type {
   AuditRecord,
   RecordOptions,
 } from './audit/index.js';
+
+export {
+  APPROVALS_DIRECTORY,
+  DEFAULT_TTL_MS,
+  approvalsDirectory,
+  callFingerprint,
+  grantApproval,
+  sweepApprovals,
+  takeApproval,
+} from './approvals/index.js';
+export type { Approval, GrantOptions, TakeOptions } from './approvals/index.js';

@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   answered,
   createFakeBackend,
@@ -8,6 +11,8 @@ import {
   type FakeEntry,
 } from '../backends/index.js';
 import { parsePolicy, policyForServer, type Policy } from '../policy/index.js';
+import { callFingerprint, grantApproval } from '../approvals/index.js';
+import { runApprove } from '../cli/main.js';
 import { createProxy, inspect, type ProxyEvent } from '../proxy/index.js';
 import { readLines } from '../proxy/__fixtures__/streams.js';
 import { inspectResult, inspectToolCall } from '../rules/index.js';
@@ -1062,5 +1067,293 @@ describe('a gate promise that rejects while others are queued', () => {
     } finally {
       process.off('unhandledRejection', onUnhandled);
     }
+  });
+});
+
+/**
+ * The whole loop, through the real gate, the real audit log and the real
+ * approval files: a call is held, the user runs the command the agent relayed,
+ * the retry goes through, and the one after it is held again.
+ */
+describe('holding a call and letting it through once', () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'chaperone-flow-'));
+    vi.stubEnv('XDG_STATE_HOME', home);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  const dangerous = {
+    destructive: { kind: 'noul', noul: 0.97 },
+    exfiltration: { kind: 'noul', noul: 0.02 },
+    severity: { kind: 'score', score: 3, confidence: 0.9 },
+    secret_in_args: { kind: 'noul', noul: 0.01 },
+  } as const satisfies Record<string, Answer>;
+
+  function held(policy: Policy) {
+    const judgments: Judgment[] = [];
+    const toClient: string[] = [];
+    const toUpstream: string[] = [];
+    const clientInput = new PassThrough();
+    const clientOutput = new PassThrough();
+    const upstreamInput = new PassThrough();
+    const upstreamOutput = new PassThrough();
+    clientOutput.on('data', (chunk: Buffer) => toClient.push(chunk.toString()));
+    upstreamInput.on('data', (chunk: Buffer) => toUpstream.push(chunk.toString()));
+    const backend = createFakeBackend([
+      callEntry(policy, 'delete_file', { path: 'a.txt' }, dangerous),
+    ]);
+    const gate = createScreeningGate({
+      policy,
+      server: SERVER,
+      backend,
+      onJudgment: (judgment) => judgments.push(judgment),
+    });
+    createProxy({ clientInput, clientOutput, upstreamInput, upstreamOutput }, { gate });
+    return {
+      clientInput,
+      judgments,
+      client: () => toClient.join(''),
+      upstream: () => toUpstream.join(''),
+      settle: () => new Promise((resolve) => setTimeout(resolve, 60)),
+    };
+  }
+
+  const line = (id: number) => `${call(id, 'delete_file', { path: 'a.txt' })}\n`;
+
+  /** Exactly what the agent told the user to run. */
+  const approve = (id: string): number => {
+    const quiet = {
+      input: new PassThrough(),
+      output: new PassThrough(),
+      errorOutput: new PassThrough(),
+    };
+    quiet.output.resume();
+    quiet.errorOutput.resume();
+    return runApprove(id, quiet, process.env);
+  };
+
+  it('holds, releases once, and holds again', async () => {
+    const policy = parsePolicy('mode: enforce');
+    const h = held(policy);
+
+    h.clientInput.write(line(1));
+    await h.settle();
+    const first = h.judgments[0];
+    expect(first).toMatchObject({ applied: { kind: 'hold' } });
+    expect(h.client()).toContain('agent-chaperone approve');
+    expect(h.upstream()).toBe('');
+
+    // What the user does after reading the message the agent relayed, through
+    // the command they are actually told to run. Nothing here reaches past it:
+    // if the gate and the command disagreed about what the id meant, this would
+    // grant a token no retry could spend.
+    expect(approve(first?.id ?? '')).toBe(0);
+
+    h.clientInput.write(line(2));
+    await h.settle();
+    expect(h.upstream()).toContain('delete_file');
+    expect(h.judgments[1]).toMatchObject({
+      applied: { kind: 'forward' },
+      approved: first?.id,
+    });
+
+    h.clientInput.write(line(3));
+    await h.settle();
+    expect(h.judgments[2]).toMatchObject({ applied: { kind: 'hold' } });
+    // Once, and only the one call: the upstream saw exactly one.
+    expect(h.upstream().trim().split('\n')).toHaveLength(1);
+  });
+
+  it('tells the agent what to relay, and nothing about this machine', async () => {
+    const policy = parsePolicy('mode: enforce');
+    const h = held(policy);
+
+    h.clientInput.write(line(1));
+    await h.settle();
+
+    const text = h.client();
+    expect(text).toContain('delete_file');
+    expect(text).toContain('hard to undo');
+    expect(text).toContain('agent-chaperone approve');
+    // No path on this machine, and no stack trace. The agent relays this to a
+    // user, and anything else in it is something the user did not ask to share.
+    expect(text).not.toContain(home);
+    expect(text).not.toContain('/Users/');
+    expect(text).not.toContain('    at ');
+    expect(text).not.toContain('.jsonl');
+  });
+
+  it('does not spend the model on a call the user already allowed', async () => {
+    const policy = parsePolicy('mode: enforce');
+    const h = held(policy);
+    h.clientInput.write(line(1));
+    await h.settle();
+    const first = h.judgments[0];
+    approve(first?.id ?? '');
+
+    h.clientInput.write(line(2));
+    await h.settle();
+
+    // The recording is for one request. A second would throw, so the fact that
+    // this passes is the check that no screen was asked for.
+    expect(h.judgments[1]).toMatchObject({ screened: false, applied: { kind: 'forward' } });
+  });
+
+  it('releases nothing for a different call to the same tool', async () => {
+    const policy = parsePolicy('mode: enforce');
+    const h = held(policy);
+    h.clientInput.write(line(1));
+    await h.settle();
+    const first = h.judgments[0];
+    approve(first?.id ?? '');
+
+    // A different path is a different call. It gets whatever it deserves on its
+    // own, and it does not get to spend this token.
+    h.clientInput.write(`${call(2, 'delete_file', { path: 'b.txt' })}\n`);
+    await h.settle();
+    const second = h.judgments[1];
+    expect(second?.side === 'call' && Object.hasOwn(second, 'approved')).toBe(false);
+
+    h.clientInput.write(line(3));
+    await h.settle();
+    expect(h.judgments[2]).toMatchObject({ approved: first?.id, applied: { kind: 'forward' } });
+  });
+
+  it('does not let an approval override a deny list', async () => {
+    const policy = parsePolicy(
+      `mode: enforce\nservers:\n  ${SERVER}:\n    deny_tools: ["delete_*"]`,
+    );
+    const h = held(policy);
+
+    h.clientInput.write(line(1));
+    await h.settle();
+    const first = h.judgments[0];
+    expect(first).toMatchObject({ applied: { kind: 'block' } });
+
+    // A blocked call records no hold, so there is nothing to approve and the
+    // command says so. Granting a token by hand is the stronger check: even
+    // then, nothing releases it.
+    expect(approve(first?.id ?? '')).not.toBe(0);
+    grantApproval({
+      id: 'deadbeef',
+      server: SERVER,
+      tool: 'delete_file',
+      fingerprint: callFingerprint(SERVER, 'delete_file', { path: 'a.txt' }),
+      heldAt: '2026-09-19T10:00:00.000Z',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+
+    h.clientInput.write(line(2));
+    await h.settle();
+
+    // A deny list is a standing rule the user wrote, not a question they were
+    // asked, so nothing releases it.
+    expect(h.judgments[1]).toMatchObject({ applied: { kind: 'block' } });
+    expect(h.upstream()).toBe('');
+  });
+});
+
+/**
+ * The call that is released has to be the call that was agreed to, and
+ * redaction is lossy in a way an agent controls.
+ */
+describe('two calls that redact to the same thing', () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'chaperone-print-'));
+    vi.stubEnv('XDG_STATE_HOME', home);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  // The secret pattern for a named key is greedy and its value class contains
+  // `/` and `.`, so it swallows whatever path is glued to the key. These two
+  // redact identically and are not the same call.
+  const AGREED = { path: '/srv/vault/api_key=AAAAAAAAAAAAAAAA/notes.md' };
+  const SUBSTITUTED = { path: '/srv/vault/api_key=AAAAAAAAAAAAAAAA/../../../etc/shadow' };
+
+  it('really do redact to the same thing, which is why this matters', () => {
+    const one = inspectToolCall({
+      tool: 'read_file',
+      arguments: AGREED,
+      server: policyForServer(parsePolicy(''), SERVER),
+      redaction: parsePolicy('').redaction.patterns,
+    });
+    const two = inspectToolCall({
+      tool: 'read_file',
+      arguments: SUBSTITUTED,
+      server: policyForServer(parsePolicy(''), SERVER),
+      redaction: parsePolicy('').redaction.patterns,
+    });
+
+    expect(one.redacted_arguments).toEqual(two.redacted_arguments);
+  });
+
+  it('does not let an approval for one release the other', async () => {
+    const policy = parsePolicy('mode: enforce');
+    const judgments: Judgment[] = [];
+    const toUpstream: string[] = [];
+    const clientInput = new PassThrough();
+    const clientOutput = new PassThrough();
+    const upstreamInput = new PassThrough();
+    const upstreamOutput = new PassThrough();
+    clientOutput.resume();
+    upstreamInput.on('data', (chunk: Buffer) => toUpstream.push(chunk.toString()));
+    const holdEverything: Backend = {
+      name: 'holds',
+      async ask() {
+        return {
+          ok: true,
+          model: 'holds',
+          inputTokens: 1,
+          latencyMs: 1,
+          answers: {
+            destructive: { kind: 'noul', noul: 0.97 },
+            exfiltration: { kind: 'noul', noul: 0.01 },
+            severity: { kind: 'score', score: 3, confidence: 0.9 },
+            secret_in_args: { kind: 'noul', noul: 0.01 },
+          },
+        } as never;
+      },
+    };
+    const gate = createScreeningGate({
+      policy,
+      server: SERVER,
+      backend: holdEverything,
+      onJudgment: (judgment) => judgments.push(judgment),
+    });
+    createProxy({ clientInput, clientOutput, upstreamInput, upstreamOutput }, { gate });
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 70));
+    const quiet = {
+      input: new PassThrough(),
+      output: new PassThrough(),
+      errorOutput: new PassThrough(),
+    };
+    quiet.output.resume();
+    quiet.errorOutput.resume();
+
+    clientInput.write(`${call(1, 'read_file', AGREED)}\n`);
+    await settle();
+    expect(judgments[0]).toMatchObject({ applied: { kind: 'hold' } });
+    expect(runApprove(judgments[0]?.id ?? '', quiet, process.env)).toBe(0);
+
+    clientInput.write(`${call(2, 'read_file', SUBSTITUTED)}\n`);
+    await settle();
+
+    // A different file, hidden inside the run redaction replaced.
+    expect(judgments[1]).toMatchObject({ applied: { kind: 'hold' } });
+    expect(toUpstream.join('')).not.toContain('etc/shadow');
+
+    clientInput.write(`${call(3, 'read_file', AGREED)}\n`);
+    await settle();
+    expect(judgments[2]).toMatchObject({ applied: { kind: 'forward' } });
   });
 });

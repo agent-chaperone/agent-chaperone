@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { createAuditLog, currentSession, readRecords } from '../audit/index.js';
+import { callFingerprint, recordHold, takeApproval } from '../approvals/index.js';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readLines } from '../proxy/__fixtures__/streams.js';
@@ -407,9 +408,6 @@ describe('run', () => {
   });
 
   describe('reading a withheld result back', () => {
-    const FIXTURE3 = fileURLToPath(
-      new URL('../proxy/__fixtures__/echo-upstream.mjs', import.meta.url),
-    );
     const ESC2 = String.fromCharCode(0x1b);
 
     function session(records: readonly object[]): void {
@@ -467,7 +465,7 @@ describe('run', () => {
       for (const tool of ['delete_one', 'delete_two']) {
         const streams = io();
         const exit = run(
-          ['--policy', policy, '--server', 'node', '--', process.execPath, FIXTURE3],
+          ['--policy', policy, '--server', 'node', '--', process.execPath, FIXTURE],
           streams,
         );
         streams.input.write(
@@ -527,7 +525,7 @@ describe('run', () => {
       // --server being passed.
       const policy = policyFile('mode: enforce\nservers:\n  node:\n    deny_tools: ["delete_*"]\n');
       const streams = io();
-      const exit = run(['--policy', policy, '--', process.execPath, FIXTURE3], streams);
+      const exit = run(['--policy', policy, '--', process.execPath, FIXTURE], streams);
       streams.input.write(
         `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'delete_file', arguments: {} } })}\n`,
       );
@@ -544,7 +542,7 @@ describe('run', () => {
       writeFileSync(join(stateHome, 'wall'), 'x', 'utf8');
       vi.stubEnv('XDG_STATE_HOME', join(stateHome, 'wall'));
       const streams = io();
-      const exit = run(['--', process.execPath, FIXTURE3], streams);
+      const exit = run(['--', process.execPath, FIXTURE], streams);
       streams.input.write(
         `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'read_file', arguments: {} } })}\n`,
       );
@@ -554,6 +552,182 @@ describe('run', () => {
 
       expect(reply).toContain('echoedMethod');
       expect(streams.stderr()).toContain('not being recorded');
+    });
+  });
+
+  describe('approving a held call from the command line', () => {
+    const heldRecord = {
+      side: 'call',
+      screened: true,
+      tool: 'delete_file',
+      server: 'files',
+      mode: 'enforce',
+      intended: { kind: 'hold', reason: 'destructive', probability: 0.97 },
+      applied: { kind: 'hold', reason: 'destructive', probability: 0.97 },
+      answers: { destructive: 0.97 },
+      rules: {},
+      secrets: [],
+      arguments: { path: 'a.txt' },
+      id: 'aabbccdd',
+    };
+
+    function record(one: object): void {
+      const log = createAuditLog({
+        path: join(stateHome, 'agent-chaperone', 'sessions', '2026-09-19T10-00-00-000Z-1.jsonl'),
+        now: () => new Date('2026-09-19T10:00:00.000Z'),
+      });
+      log.write(one as never);
+    }
+
+    it('writes a token the gate can spend', async () => {
+      recordHold('aabbccdd', 'files', 'delete_file', 'abc123abc123abc1');
+      const streams = io();
+
+      expect(await run(['approve', 'aabbccdd'], streams)).toBe(0);
+
+      expect(streams.stdout()).toContain('delete_file');
+      expect(streams.stdout()).toContain('try again before');
+      expect(takeApproval('abc123abc123abc1')).toMatchObject({ id: 'aabbccdd' });
+    });
+
+    it('works when the session recorded no content at all', async () => {
+      // The hold is what approve reads, not the log, so --no-store-content and a
+      // log that could not be written both leave the flow working.
+      recordHold('11223344', 'files', 'write_file', 'ffeeddccbbaa9988');
+      const streams = io();
+
+      expect(await run(['approve', '11223344'], streams)).toBe(0);
+      expect(takeApproval('ffeeddccbbaa9988')).toBeDefined();
+    });
+
+    it('refuses an id nothing has held', async () => {
+      const streams = io();
+
+      expect(await run(['approve', 'deadbeef'], streams)).toBe(64);
+
+      expect(streams.stderr()).toContain('no held call with id deadbeef');
+    });
+
+    it('says a hold has expired rather than that the id is unknown', async () => {
+      record({ ...heldRecord, id: '99887766' });
+      const streams = io();
+
+      expect(await run(['approve', '99887766'], streams)).toBe(64);
+
+      expect(streams.stderr()).toContain('has expired');
+    });
+
+    it('refuses to approve what the policy blocked outright', async () => {
+      record({
+        ...heldRecord,
+        id: 'b10cced1',
+        intended: { kind: 'block', reason: 'deny-list' },
+        applied: { kind: 'block', reason: 'deny-list' },
+      });
+      const streams = io();
+
+      expect(await run(['approve', 'b10cced1'], streams)).toBe(64);
+
+      // A deny list is a standing rule, not a question the user was asked.
+      expect(streams.stderr()).toContain('Edit the policy file instead');
+    });
+
+    it('refuses to approve a result, which was never a call', async () => {
+      record({
+        ...heldRecord,
+        id: 'de5c1112',
+        side: 'result',
+        blocks: 1,
+        unscreened: { blocks: 0, chars: 0, parts: 0 },
+        hidden: [],
+        text: 'x',
+      });
+      const streams = io();
+
+      expect(await run(['approve', 'de5c1112'], streams)).toBe(64);
+
+      expect(streams.stderr()).toContain('is a tool result');
+    });
+
+    it('refuses to approve a call that was never held', async () => {
+      record({
+        ...heldRecord,
+        id: 'f0f0f0f0',
+        intended: { kind: 'forward' },
+        applied: { kind: 'forward' },
+      });
+      const streams = io();
+
+      expect(await run(['approve', 'f0f0f0f0'], streams)).toBe(64);
+
+      expect(streams.stderr()).toContain('nothing to allow');
+    });
+
+    it('says nothing about where anything lives on disk', async () => {
+      recordHold('aabbccdd', 'files', 'delete_file', 'abc123abc123abc1');
+      const streams = io();
+
+      await run(['approve', 'aabbccdd'], streams);
+
+      const printed = `${streams.stdout()}${streams.stderr()}`;
+      expect(printed).not.toContain(stateHome);
+      expect(printed).not.toContain('    at ');
+    });
+
+    it('clears out tokens nobody spent while it is there', async () => {
+      recordHold('aabbccdd', 'files', 'delete_file', 'abc123abc123abc1');
+      mkdirSync(join(stateHome, 'agent-chaperone', 'approvals'), { recursive: true });
+      writeFileSync(
+        join(stateHome, 'agent-chaperone', 'approvals', 'ffffffffffffffff.json'),
+        `${JSON.stringify({ id: 'old', tool: 'x', fingerprint: 'ffffffffffffffff', grantedAt: '2000-01-01T00:00:00.000Z', expiresAt: '2000-01-01T00:00:00.000Z' })}\n`,
+        'utf8',
+      );
+
+      await run(['approve', 'aabbccdd'], io());
+
+      // Asserted on the file: takeApproval would refuse an expired token and
+      // delete it on the way out, so it comes back undefined either way.
+      expect(
+        existsSync(join(stateHome, 'agent-chaperone', 'approvals', 'ffffffffffffffff.json')),
+      ).toBe(false);
+    });
+
+    it('leaves the approve flow switched on in the session it wraps', async () => {
+      // Nothing about the wrap path is observable from outside except this: a
+      // token granted for the call it is about to make gets spent.
+      const print = callFingerprint('node', 'read_file', { path: 'a.txt' });
+      recordHold('1a2b3c4d', 'node', 'read_file', print);
+      expect(await run(['approve', '1a2b3c4d'], io())).toBe(0);
+
+      const streams = io();
+      const exit = run(['--server', 'node', '--', process.execPath, FIXTURE], streams);
+      streams.input.write(
+        `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'read_file', arguments: { path: 'a.txt' } } })}\n`,
+      );
+      await readLines(streams.output, 1);
+      streams.input.end();
+      await exit;
+
+      expect(takeApproval(print)).toBeUndefined();
+      expect(readRecords(currentSession(process.env) ?? '')[0]).toMatchObject({
+        approved: '1a2b3c4d',
+      });
+    });
+
+    it('reads the id after a flag', () => {
+      expect(parseCommand(['approve', '--whatever', 'abc'])).toEqual({
+        kind: 'approve',
+        id: 'abc',
+      });
+      expect(parseCommand(['approve'])).toEqual({ kind: 'usage' });
+    });
+
+    it('offers the command in the usage text, since an agent tells a user to run it', async () => {
+      const streams = io();
+
+      await run([], streams);
+
+      expect(streams.stderr()).toContain('agent-chaperone approve <id>');
     });
   });
 });
