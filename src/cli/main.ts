@@ -249,6 +249,12 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
     io.errorOutput.write(`agent-chaperone: no record with id ${id}.\n`);
     return EXIT_USAGE;
   }
+  if (record.kind === 'eviction') {
+    // Nothing was screened and nothing was withheld, so there is no content to
+    // print. The line itself is the answer: it says which pairing was lost.
+    io.output.write(`${formatRecord(record)}\n`);
+    return 0;
+  }
   if (record.content === undefined) {
     io.output.write(`${formatRecord(record)}\n`);
     io.errorOutput.write(
@@ -509,6 +515,17 @@ export async function run(
         if (event.type === 'stream-error') {
           chaperoneFault = true;
           io.errorOutput.write(`agent-chaperone: ${event.error.message}\n`);
+          return;
+        }
+        if (event.type === 'correlator-eviction') {
+          // The reply to this request is about to arrive with nothing to pair
+          // it with. Recorded so that is explainable rather than a silence.
+          audit.writeEviction({
+            server,
+            id: event.request.id,
+            method: event.request.method,
+            reason: event.reason,
+          });
         }
       },
     },

@@ -122,7 +122,7 @@ The package is publishable and the version is 0.1.0. Publishing is a separate, d
 | backends | done (#6), asked on every screen (#8) |
 | screens | done (#7), built on every screen (#8) |
 | screening | done (#8) |
-| audit | done (#9) |
+| audit | done (#9, evictions recorded #19) |
 | approvals | done (#10) |
 | cli | wraps, screens, `log`, `show` and `approve` (#8, #9, #10) |
 | hooks | done (#11) |

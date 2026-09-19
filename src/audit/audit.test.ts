@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallJudgment, ResultJudgment } from '../screening/index.js';
 import { sessionFileName, sessionsDirectory, stateDirectory } from './paths.js';
 import { MAX_MATCHES } from '../rules/index.js';
-import { costOf, formatRecord, toRecord } from './record.js';
+import { costOf, formatRecord, toEvictionRecord, toRecord } from './record.js';
 import {
   currentSession,
   findRecord,
@@ -88,6 +88,10 @@ const result: ResultJudgment = {
   id: 'ef56ab78',
 };
 
+/** The tool a judgment record names. An eviction record has no tool, and none of these are one. */
+const named = (record: { kind: string; tool?: string }): string =>
+  record.kind === 'eviction' ? 'eviction' : (record.tool ?? '');
+
 describe('one judgment as one line', () => {
   it('records what the decision was made from, not only what it was', () => {
     const record = toRecord(call, { now, storeContent: true });
@@ -147,6 +151,40 @@ describe('one judgment as one line', () => {
     expect(record.model).toBeUndefined();
     expect(record.cost_usd).toBeUndefined();
     expect(record.screened).toBe(false);
+  });
+});
+
+describe('an eviction as one line', () => {
+  it('records which pairing was lost and why', () => {
+    const record = toEvictionRecord(
+      { server: 'files', id: 7, method: 'tools/call', reason: 'count' },
+      { now, storeContent: true },
+    );
+    expect(record).toMatchObject({ kind: 'eviction', id: '7', method: 'tools/call' });
+    expect(formatRecord(record)).toContain('tools/call');
+    expect(formatRecord(record)).toContain('cannot be paired');
+  });
+
+  it('scrubs a method and id that came off the wire', () => {
+    // Both reach a terminal through this file, so neither may forge a line.
+    const escape = String.fromCharCode(27);
+    const record = toEvictionRecord(
+      { server: 'files', id: `7${escape}[2K`, method: `tools/call${escape}[2K`, reason: 'bytes' },
+      { now, storeContent: true },
+    );
+    expect(formatRecord(record)).not.toContain(escape);
+  });
+
+  it('is written to the same log as the judgments', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chaperone-evict-'));
+    const path = join(dir, 'evict.jsonl');
+    const log = createAuditLog({ path, now });
+    log.write(call);
+    log.writeEviction({ server: 'files', id: 7, method: 'tools/call', reason: 'count' });
+
+    const records = readRecords(path);
+    expect(records.map((one) => one.kind)).toEqual(['call', 'eviction']);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -550,7 +588,7 @@ describe('several servers at once', () => {
     write('2026-09-19T10-00-00-000Z-1.jsonl', [{ ...call, tool: 'alpha', id: 'a1' }]);
     write('2026-09-19T10-00-01-000Z-2.jsonl', [{ ...call, tool: 'beta', id: 'b1' }]);
 
-    expect(recentRecords(undefined, env()).map((one) => one.tool)).toEqual(['alpha', 'beta']);
+    expect(recentRecords(undefined, env()).map(named)).toEqual(['alpha', 'beta']);
   });
 
   it('keeps the newest decisions when there are more than it shows', () => {
@@ -559,7 +597,7 @@ describe('several servers at once', () => {
       Array.from({ length: 5 }, (_unused, at) => ({ ...call, id: `id${at}`, tool: `t${at}` })),
     );
 
-    expect(recentRecords(2, env()).map((one) => one.tool)).toEqual(['t3', 't4']);
+    expect(recentRecords(2, env()).map(named)).toEqual(['t3', 't4']);
   });
 
   it('ignores a file that is not a session', () => {
@@ -574,7 +612,7 @@ describe('several servers at once', () => {
     const seen: string[] = [];
     const stop = new AbortController();
 
-    const running = followRecords((one) => seen.push(one.tool), {
+    const running = followRecords((one) => seen.push(named(one)), {
       intervalMs: 10,
       signal: stop.signal,
       env: env(),

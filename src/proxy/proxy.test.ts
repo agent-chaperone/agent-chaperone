@@ -1,10 +1,13 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { createProxy, type ProxyEvent } from './proxy.js';
+import { RequestCorrelator } from './correlator.js';
 import { readLines } from './__fixtures__/streams.js';
 import { BlockingSink, FailingSink, tick } from './__fixtures__/sinks.js';
 
-function harness(options: { maxLineBytes?: number } = {}) {
+function harness(
+  options: { maxLineBytes?: number; maxPending?: number; maxPendingBytes?: number } = {},
+) {
   const clientInput = new PassThrough();
   const clientOutput = new PassThrough();
   const upstreamInput = new PassThrough();
@@ -242,5 +245,88 @@ describe('shutdown', () => {
     h.clientInput.write('{"jsonrpc":"2.0","id":1,"method":"tools/list"}\n');
     await tick();
     expect(h.events.filter((event) => event.type === 'message')).toEqual([]);
+  });
+});
+
+describe('a pending request dropped to stay in bounds', () => {
+  const line = (id: number, method: string, pad = '') =>
+    JSON.stringify({ jsonrpc: '2.0', id, method, params: { pad } });
+
+  const envelopeOf = (id: number, method: string, pad = '') => {
+    const raw = line(id, method, pad);
+    return {
+      kind: 'request' as const,
+      id,
+      method,
+      raw,
+      value: JSON.parse(raw) as unknown,
+    };
+  };
+
+  it('says what it dropped when the count bound is reached', () => {
+    // A peer can spend cheap requests to push out the one entry whose pairing
+    // mattered. The bound has to hold; doing it in silence does not.
+    const seen: string[] = [];
+    const correlator = new RequestCorrelator({
+      maxPending: 2,
+      onEvict: (one) => seen.push(`${one.request.method}:${one.reason}`),
+    });
+
+    correlator.record(envelopeOf(1, 'tools/call'), 0);
+    correlator.record(envelopeOf(2, 'resources/read'), 1);
+    correlator.record(envelopeOf(3, 'tools/call'), 2);
+
+    expect(seen).toEqual(['tools/call:count']);
+  });
+
+  it('says what it dropped when the byte bound is reached', () => {
+    const seen: string[] = [];
+    const correlator = new RequestCorrelator({
+      maxPending: 1000,
+      maxPendingBytes: 400,
+      onEvict: (one) => seen.push(`${one.request.method}:${one.reason}`),
+    });
+
+    correlator.record(envelopeOf(1, 'tools/call', 'x'.repeat(200)), 0);
+    correlator.record(envelopeOf(2, 'resources/read', 'y'.repeat(200)), 1);
+
+    expect(seen).toEqual(['tools/call:bytes']);
+  });
+
+  it('keeps the bound even when the reporter throws', () => {
+    // The report is a diagnostic. It must not be able to leave the map over the
+    // limit it exists to describe.
+    const correlator = new RequestCorrelator({
+      maxPending: 2,
+      onEvict: () => {
+        throw new Error('reporter is broken');
+      },
+    });
+
+    correlator.record(envelopeOf(1, 'tools/call'), 0);
+    correlator.record(envelopeOf(2, 'tools/call'), 1);
+    expect(() => correlator.record(envelopeOf(3, 'tools/call'), 2)).toThrow('reporter is broken');
+    expect(correlator.size).toBeLessThanOrEqual(2);
+  });
+
+  it('reports it on the event seam, past both bounds', async () => {
+    const h = harness({ maxPending: 2 });
+    for (let id = 1; id <= 5; id += 1) {
+      h.clientInput.write(`${line(id, 'tools/call')}\n`);
+    }
+    await readLines(h.upstreamInput, 5);
+
+    const evictions = h.events.filter((one) => one.type === 'correlator-eviction');
+    expect(evictions.length).toBeGreaterThan(0);
+    expect(evictions[0]).toMatchObject({ reason: 'count' });
+
+    const byBytes = harness({ maxPending: 1000, maxPendingBytes: 400 });
+    byBytes.clientInput.write(`${line(1, 'tools/call', 'x'.repeat(200))}\n`);
+    byBytes.clientInput.write(`${line(2, 'resources/read', 'y'.repeat(200))}\n`);
+    await readLines(byBytes.upstreamInput, 2);
+
+    expect(
+      byBytes.events.filter((one) => one.type === 'correlator-eviction').map((one) => one.reason),
+    ).toEqual(['bytes']);
   });
 });

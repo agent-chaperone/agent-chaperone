@@ -30,7 +30,7 @@ export interface AuditContent {
   readonly text?: string;
 }
 
-export interface AuditRecord {
+export interface JudgmentRecord {
   readonly ts: string;
   readonly id: string;
   readonly server: string;
@@ -60,6 +60,47 @@ export interface AuditRecord {
   readonly unscreened?: unknown;
   readonly hidden?: readonly string[];
   readonly content?: AuditContent;
+}
+
+/**
+ * A pending request dropped to keep the correlator inside its bounds.
+ *
+ * The bounds are not optional: a peer that never answers would otherwise cost
+ * memory without limit. Doing it silently is what was not acceptable. The
+ * response the dropped request would have been paired with arrives unpaired,
+ * and a screen that wanted the arguments to judge the result gets none, so
+ * without this line there is nothing that explains why afterwards.
+ */
+export interface EvictionRecord {
+  readonly ts: string;
+  readonly kind: 'eviction';
+  readonly server: string;
+  /** The JSON-RPC id of the request that was dropped, as text. */
+  readonly id: string;
+  readonly method: string;
+  readonly reason: 'count' | 'bytes';
+}
+
+export type AuditRecord = JudgmentRecord | EvictionRecord;
+
+export function toEvictionRecord(
+  input: {
+    readonly server: string;
+    readonly id: unknown;
+    readonly method: string;
+    readonly reason: 'count' | 'bytes';
+  },
+  options: RecordOptions,
+): EvictionRecord {
+  return {
+    ts: options.now().toISOString(),
+    kind: 'eviction',
+    server: input.server,
+    // Both come off the wire and reach a terminal through this file.
+    id: sanitizeMessage(String(input.id)),
+    method: sanitizeMessage(input.method),
+    reason: input.reason,
+  };
 }
 
 export function costOf(inputTokens: number): number {
@@ -120,7 +161,7 @@ function foundCredential(judgment: Judgment): boolean {
 }
 
 /** One judgment, as the line that goes on disk. */
-export function toRecord(judgment: Judgment, options: RecordOptions): AuditRecord {
+export function toRecord(judgment: Judgment, options: RecordOptions): JudgmentRecord {
   const usage = judgment.usage;
   const common = {
     ts: options.now().toISOString(),
@@ -216,6 +257,10 @@ function probabilities(answers: unknown): string {
  */
 export function formatRecord(record: AuditRecord): string {
   const time = record.ts.slice(11, 19);
+  if (record.kind === 'eviction') {
+    const bound = record.reason === 'count' ? 'too many pending' : 'too many bytes pending';
+    return `${time} evict  DROPPED  ${record.method} id=${record.id} (${bound}, so the reply to it cannot be paired)`;
+  }
   const applied = record.applied as { kind?: string } | undefined;
   const intended = record.intended as { kind?: string } | undefined;
   // Scrubbed here as well as where the judgment was made. This renders stored

@@ -228,6 +228,8 @@ export type {
   AuditLog,
   AuditLogOptions,
   AuditRecord,
+  EvictionRecord,
+  JudgmentRecord,
   RecordOptions,
 } from './audit/index.js';
 
