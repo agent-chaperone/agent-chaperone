@@ -19,6 +19,7 @@ import {
   formatRecord,
   recentRecords,
 } from '../audit/index.js';
+import { grantApproval, readHold, sweepApprovals } from '../approvals/index.js';
 import { sanitizeMessage } from '../backends/index.js';
 import { createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
 import { PolicyError, parsePolicy, type Policy } from '../policy/index.js';
@@ -31,6 +32,7 @@ const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
   agent-chaperone [options] -- <command> [args...]   Wrap and screen a server
   agent-chaperone log [--follow]                     Read this session's decisions
   agent-chaperone show <id>                          Print what was held or withheld
+  agent-chaperone approve <id>                       Let one held call through, once
 
 Everything after -- is the upstream MCP server to run. Example:
 
@@ -76,6 +78,7 @@ export type Command =
   | ({ readonly kind: 'wrap' } & ParsedArguments)
   | { readonly kind: 'log'; readonly follow: boolean }
   | { readonly kind: 'show'; readonly id: string }
+  | { readonly kind: 'approve'; readonly id: string }
   | { readonly kind: 'usage' };
 
 /**
@@ -90,9 +93,9 @@ export function parseCommand(argv: readonly string[]): Command {
   if (first === 'log') {
     return { kind: 'log', follow: rest.includes('--follow') || rest.includes('-f') };
   }
-  if (first === 'show') {
+  if (first === 'show' || first === 'approve') {
     const id = rest.find((one) => !one.startsWith('-'));
-    return id === undefined ? { kind: 'usage' } : { kind: 'show', id };
+    return id === undefined ? { kind: 'usage' } : { kind: first, id };
   }
   const parsed = parseArguments(argv);
   return parsed === undefined ? { kind: 'usage' } : { kind: 'wrap', ...parsed };
@@ -256,6 +259,59 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
   return 0;
 }
 
+/**
+ * `approve`: let one held call through, once.
+ *
+ * The token names the exact call, not the tool, so agreeing to a write to one
+ * path does not release a write to another. A deny list is not approvable: that
+ * is a standing rule the user wrote, and this releases a call they were asked
+ * about.
+ */
+export function runApprove(
+  id: string,
+  io: RunStreams,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  sweepApprovals({ env });
+  const hold = readHold(id, { env });
+  if (hold === undefined) {
+    // The audit log is consulted only to say something better than "unknown".
+    // It is not what decides: a hold is, so this works when content was not
+    // stored and when the log could not be written at all.
+    io.errorOutput.write(`agent-chaperone: ${explainMissingHold(id, env)}\n`);
+    return EXIT_USAGE;
+  }
+
+  const approval = grantApproval(hold, { env });
+  if (approval === undefined) {
+    io.errorOutput.write(`agent-chaperone: ${id} could not be allowed.\n`);
+    return EXIT_USAGE;
+  }
+  io.output.write(
+    `Allowed once: ${hold.tool}. Ask the agent to try again before ${approval.expiresAt.slice(11, 19)}Z. A second attempt after that is held again.\n`,
+  );
+  return 0;
+}
+
+/** Why there is no hold for this id, in whatever detail the log can supply. */
+function explainMissingHold(id: string, env: NodeJS.ProcessEnv): string {
+  const record = findRecord(id, env);
+  if (record === undefined) {
+    return `no held call with id ${id}.`;
+  }
+  if (record.kind !== 'call') {
+    return `${id} is a tool result, not a call, so there is nothing to allow. Use agent-chaperone show ${id} to read it.`;
+  }
+  const applied = record.applied as { kind?: string } | undefined;
+  if (applied?.kind === 'block') {
+    return `${id} was blocked by the policy rather than held, so approving it would not change anything. Edit the policy file instead.`;
+  }
+  if (applied?.kind !== 'hold') {
+    return `${id} was ${String(applied?.kind ?? 'not held')}, so there is nothing to allow.`;
+  }
+  return `the hold for ${id} has expired. Ask the agent to try the call again, and approve the new id.`;
+}
+
 export async function run(
   argv: readonly string[],
   io: RunStreams = { input: process.stdin, output: process.stdout, errorOutput: process.stderr },
@@ -283,6 +339,9 @@ export async function run(
   }
   if (asked.kind === 'show') {
     return runShow(asked.id, io);
+  }
+  if (asked.kind === 'approve') {
+    return runApprove(asked.id, io);
   }
   const parsed = asked;
 

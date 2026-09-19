@@ -54,6 +54,7 @@ const call: CallJudgment = {
   rules: {},
   secrets: ['github_token'],
   arguments: { path: '[REDACTED:github_token]' },
+  fingerprint: 'f0f0f0f0',
   usage: { model: 'jev-1.13.0', inputTokens: 812, latencyMs: 143.4, requests: 1 },
   id: 'ab12cd34',
 };
@@ -420,6 +421,17 @@ describe('a line that cannot be forged', () => {
     );
 
     expect(line).toContain('screen failed: rate-limited');
+  });
+
+  it('says a decision was released by an approval rather than cleared', () => {
+    const line = formatRecord(
+      toRecord(
+        { ...call, applied: { kind: 'forward' }, approved: 'aabbccdd' },
+        { now, storeContent: true },
+      ),
+    );
+
+    expect(line).toContain('[approved]');
   });
 
   it('prints the time, the cost and every probability', () => {

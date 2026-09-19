@@ -27,6 +27,7 @@ import type {
   ResultAnswers,
   ResultRuleFindings,
 } from '../policy/index.js';
+import { callFingerprint, recordHold, takeApproval } from '../approvals/index.js';
 import { sanitizeMessage } from '../backends/index.js';
 import { decidePostResult, decidePreCall, policyForServer, shouldScreen } from '../policy/index.js';
 import type { Envelope, Gate, GateVerdict, PendingRequest } from '../proxy/index.js';
@@ -111,6 +112,14 @@ export interface CallJudgment {
   readonly secrets: readonly string[];
   /** The arguments as they went to the model, which is to say already redacted. */
   readonly arguments: unknown;
+  /**
+   * What an approval for this exact call is keyed by. Never recorded: it is a
+   * digest of the arguments as they arrived, and the audit log keeps the
+   * redacted ones.
+   */
+  readonly fingerprint: string;
+  /** The id of the approval that released it, when one did. */
+  readonly approved?: string;
   readonly usage?: BackendUsage;
   readonly failure?: BackendFailure;
   readonly id: string;
@@ -166,6 +175,11 @@ export interface ScreeningOptions {
   readonly onJudgment?: (judgment: Judgment) => void;
   /** Ids for held calls and withheld results, so a user can name one on the command line. */
   readonly newId?: () => string;
+  /**
+   * Whether a held call can be released by `agent-chaperone approve`. Off leaves
+   * the flow out entirely, which is what a test that is not about it wants.
+   */
+  readonly approvals?: boolean;
 }
 
 /**
@@ -255,6 +269,7 @@ function stronger(one: ResultAction, two: ResultAction): ResultAction {
 
 export function createScreeningGate(options: ScreeningOptions): Gate {
   const { policy, server, backend } = options;
+  const approvals = options.approvals ?? true;
   const report = options.onJudgment ?? ((): void => undefined);
   const newId = options.newId ?? defaultId;
   const server_policy = policyForServer(policy, server);
@@ -277,13 +292,24 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       ...(rules.outside_allow_list === true ? { outside_allow_list: true } : {}),
     };
     const settled = findings.denied_by !== undefined || findings.outside_allow_list === true;
+    // The arguments that arrived, not the redacted ones. What gets forwarded on
+    // a hit is the original call, and two calls differing only inside a run that
+    // redaction replaced are not the same call: a greedy secret pattern swallows
+    // the path glued to a key, so the redacted form let one approval release a
+    // different request to a different resource.
+    const fingerprint = callFingerprint(server, call.name, call.arguments);
+
+    // A deny list is a standing rule the user wrote; an approval releases one
+    // call they were asked about. So an approval is only ever looked for when
+    // the rules have not already settled it.
+    const approval = settled || !approvals ? undefined : takeApproval(fingerprint);
 
     let answers: CallAnswers = {};
     let usage: BackendUsage | undefined;
     let failure: BackendFailure | undefined;
     let screened = false;
 
-    if (!settled && backend !== undefined) {
+    if (!settled && approval === undefined && backend !== undefined) {
       const screen = buildPreCallScreen({
         tool: { name: call.name },
         redacted_arguments: rules.redacted_arguments,
@@ -308,15 +334,20 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     }
 
     const decision =
-      failure === undefined
-        ? decidePreCall(answers, findings, policy)
-        : {
-            intended: onCallFailure(policy.mode, findings, rules.dangerous.length > 0),
-            applied:
-              policy.mode === 'shadow'
-                ? ({ kind: 'forward' } as CallAction)
-                : onCallFailure(policy.mode, findings, rules.dangerous.length > 0),
-          };
+      approval !== undefined
+        ? {
+            intended: { kind: 'forward' } as CallAction,
+            applied: { kind: 'forward' } as CallAction,
+          }
+        : failure === undefined
+          ? decidePreCall(answers, findings, policy)
+          : {
+              intended: onCallFailure(policy.mode, findings, rules.dangerous.length > 0),
+              applied:
+                policy.mode === 'shadow'
+                  ? ({ kind: 'forward' } as CallAction)
+                  : onCallFailure(policy.mode, findings, rules.dangerous.length > 0),
+            };
 
     const id = newId();
     report({
@@ -333,6 +364,8 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       rules: findings,
       secrets: rules.secrets,
       arguments: rules.redacted_arguments,
+      fingerprint,
+      ...(approval === undefined ? {} : { approved: approval.id }),
       ...(usage === undefined ? {} : { usage }),
       ...(failure === undefined ? {} : { failure }),
       id,
@@ -341,6 +374,12 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
     const action = decision.applied;
     if (action.kind === 'forward') {
       return FORWARD;
+    }
+    if (action.kind === 'hold' && approvals) {
+      // What the id in the agent's message stands for. Written beside the log
+      // rather than in it, so `approve` works whether or not content was stored
+      // and whether or not the log could be written at all.
+      recordHold(id, server, call.name, fingerprint);
     }
     const text =
       action.kind === 'block'

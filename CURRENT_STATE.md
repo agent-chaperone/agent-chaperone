@@ -68,21 +68,26 @@ One JSONL line per screened message, in a per-session file under the user's stat
 
 `agent-chaperone log` prints what has been decided, one readable line each, saying what was done and what the policy would have done instead, and `--follow` keeps printing. It reads every session, because a client normally wraps several servers and each is its own process. That comparison is the point of shadow mode: it is how a user sees where their thresholds sit on their own traffic before turning enforcement on. `agent-chaperone show <id>` prints what was held or withheld, which is the copy the agent never received.
 
+### Hold and approve (#10)
+
+A held call cannot wait for a client-specific interface, so the agent is handed a result it can relay: which tool was held, why, and the one command that releases it. `agent-chaperone approve <id>` writes a single-use token, the agent retries, and that attempt goes through. The one after it is held again.
+
+The token names one call rather than one tool, keyed by a fingerprint of the server, the tool and the redacted arguments, so agreeing to a write to one path does not release a write to another. It is spent the moment it is read, and it expires, because a token left behind by a session that ended is a standing permission nobody remembers granting. A deny list is not approvable: that is a standing rule the user wrote, not a question they were asked, and the command says so and points at the policy file.
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
-Nothing in flight. A session is screened and recorded; what is missing is how a held call gets resumed, and the tools that never go through MCP.
+Nothing in flight. A session is screened, recorded, and a held call can be released. What is missing is the tools that never go through MCP.
 
 ## What's Next
 
 M1, in dependency order:
 
-1. `cli` (#10): hold and approve flow, `approve` command.
-2. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-3. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
+2. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
@@ -107,5 +112,6 @@ M1, in dependency order:
 | screens | done (#7), built on every screen (#8) |
 | screening | done (#8) |
 | audit | done (#9) |
-| cli | wraps, screens, `log` and `show` (#8, #9), approve pending (#10) |
+| approvals | done (#10) |
+| cli | wraps, screens, `log`, `show` and `approve` (#8, #9, #10) |
 | hooks | not started |

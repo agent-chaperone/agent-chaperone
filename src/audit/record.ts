@@ -52,6 +52,8 @@ export interface AuditRecord {
   readonly cost_usd?: number;
   readonly requests?: number;
   readonly failure?: unknown;
+  /** Call records only: the approval that released it, when one did. */
+  readonly approved?: string;
   /** Result records only: how the text split, and what the screen never read. */
   readonly blocks?: number;
   readonly unscreened?: unknown;
@@ -103,6 +105,7 @@ export function toRecord(judgment: Judgment, options: RecordOptions): AuditRecor
     return {
       ...common,
       kind: 'call',
+      ...(judgment.approved === undefined ? {} : { approved: judgment.approved }),
       ...(options.storeContent ? { content: { arguments: judgment.arguments } } : {}),
     };
   }
@@ -181,11 +184,12 @@ export function formatRecord(record: AuditRecord): string {
   // A screen that could not run is the case a reader most needs to see: the
   // decision beside it was taken without a model, whatever else the line says.
   const failure = record.failure as { kind?: string } | undefined;
+  const released = record.approved === undefined ? '' : ' [approved]';
   const unread =
     typeof failure?.kind === 'string'
       ? ` [screen failed: ${sanitizeMessage(failure.kind)}]`
       : record.screened
         ? ''
         : ' [not screened]';
-  return `${time} ${record.kind.padEnd(6)} ${label.padEnd(8)} ${tool}${wouldHave}${unread}${numbers === '' ? '' : `  ${numbers}`}${cost}`;
+  return `${time} ${record.kind.padEnd(6)} ${label.padEnd(8)} ${tool}${wouldHave}${released}${unread}${numbers === '' ? '' : `  ${numbers}`}${cost}`;
 }
