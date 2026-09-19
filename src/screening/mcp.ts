@@ -20,6 +20,7 @@ import type { Envelope, JsonRpcId } from '../proxy/index.js';
 
 export const TOOL_CALL = 'tools/call';
 export const RESOURCE_READ = 'resources/read';
+export const TOOLS_LIST = 'tools/list';
 
 export interface ToolCall {
   readonly name: string;

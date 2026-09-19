@@ -28,6 +28,7 @@ import { createProxy } from '../proxy/proxy.js';
 import { connectHttpUpstream } from '../proxy/http.js';
 import { spawnUpstream, UpstreamStartError, type Upstream } from '../proxy/upstream.js';
 import { createScreeningGate, type Judgment } from '../screening/index.js';
+import { forgetBaseline } from '../toollist/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
@@ -36,6 +37,7 @@ const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
   agent-chaperone log [--follow]                     Read this session's decisions
   agent-chaperone show <id>                          Print what was held or withheld
   agent-chaperone approve <id>                       Let one held call through, once
+  agent-chaperone trust <server>                     Accept the tools a server now advertises
   agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 
 What follows -- is the upstream MCP server: a command to run, or the http URL of
@@ -115,6 +117,7 @@ export type Command =
   | { readonly kind: 'log'; readonly follow: boolean }
   | { readonly kind: 'show'; readonly id: string }
   | { readonly kind: 'approve'; readonly id: string }
+  | { readonly kind: 'trust'; readonly server: string }
   | { readonly kind: 'hook'; readonly side: 'pre' | 'post' }
   | { readonly kind: 'usage' };
 
@@ -133,6 +136,10 @@ export function parseCommand(argv: readonly string[]): Command {
   if (first === 'hook') {
     const side = rest.find((one) => !one.startsWith('-'));
     return side === 'pre' || side === 'post' ? { kind: 'hook', side } : { kind: 'usage' };
+  }
+  if (first === 'trust') {
+    const name = rest.find((one) => !one.startsWith('-'));
+    return name === undefined ? { kind: 'usage' } : { kind: 'trust', server: name };
   }
   if (first === 'show' || first === 'approve') {
     const id = rest.find((one) => !one.startsWith('-'));
@@ -347,6 +354,23 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
  * is a standing rule the user wrote, and this releases a call they were asked
  * about.
  */
+/**
+ * Accept the tools a server now advertises.
+ *
+ * The record is dropped rather than rewritten, because the list to trust is the
+ * one the server offers on the next connection, and writing a list nobody is
+ * currently offering would record a description that was never seen.
+ */
+export function runTrust(server: string, io: RunStreams): number {
+  const forgotten = forgetBaseline(server);
+  io.output.write(
+    forgotten
+      ? `Forgot what ${server} advertised. Its next tool list becomes the one to expect.\n`
+      : `Nothing recorded for ${server}. Its next tool list becomes the one to expect.\n`,
+  );
+  return 0;
+}
+
 export function runApprove(
   id: string,
   io: RunStreams,
@@ -522,6 +546,9 @@ export async function run(
   if (asked.kind === 'approve') {
     return runApprove(asked.id, io);
   }
+  if (asked.kind === 'trust') {
+    return runTrust(asked.server, io);
+  }
   if (asked.kind === 'hook') {
     return runHook(asked.side, io);
   }
@@ -575,6 +602,9 @@ export async function run(
     server,
     ...(backend === undefined ? {} : { backend }),
     onJudgment: (judgment: Judgment) => audit.write(judgment),
+    // Addressed to the person, so it goes where the person is looking. The
+    // client reads stdout and would choke on anything that is not a message.
+    onNotice: (message: string) => io.errorOutput.write(`agent-chaperone: ${message}\n`),
   });
   const proxy = createProxy(
     {

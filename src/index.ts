@@ -266,3 +266,19 @@ export type {
   PreResponse,
   TextPath,
 } from './hooks/index.js';
+
+export {
+  advertisedTools,
+  compareTools,
+  digestOf,
+  forgetBaseline,
+  printTools,
+  readBaseline,
+  reviewToolList,
+  writeBaseline,
+  type AdvertisedTool,
+  type Baseline,
+  type ToolChange,
+  type ToolListReview,
+  type ToolPrint,
+} from './toollist/index.js';

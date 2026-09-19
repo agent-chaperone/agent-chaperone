@@ -6,7 +6,7 @@ agent-chaperone is a transparent proxy for MCP tool traffic. This document is th
 
 It is:
 
-- A transparent MCP proxy. Everything that is not a tool call, a tool result, a tool list, or a resource read passes through unchanged.
+- A transparent MCP proxy. Everything that is not a tool call, a tool result, or a resource read passes through unchanged, and that includes the tool list.
 - Defense in depth. Deterministic rules run first and are cheap. Jev adds semantic judgment where rules cannot express the condition.
 - Calibrated. Each check returns a probability. Thresholds live in the policy file, and the audit log records every probability, so thresholds can be tuned on real traffic without re-running inference.
 
@@ -299,7 +299,7 @@ The file and its directory are created for the owner alone. A log that cannot be
 
 Tool arguments and results go to the selected backend. The README says so on its first screen. Controls:
 
-- Per-server `screen_results: false` and `screen_calls: false`.
+- Per-server `screen_results: false` and `screen_calls: false`. `screen_tool_list: false` is separate, because comparing an advertised tool list against the one recorded for that server is a local digest and sends nothing anywhere.
 - Regex redaction of secret-shaped strings before anything is sent.
 - Size caps: results above a configurable byte limit are screened by their first and last chunks only, and the log records that the middle was skipped.
 - A pointer to the backend's data handling terms so users can check them against their own requirements.

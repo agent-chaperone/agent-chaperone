@@ -118,13 +118,16 @@ agent-chaperone approve b2c4e6a8f0
 
 The token names that one call rather than that tool, keyed by a digest of the server, the tool and the arguments as they arrived. Agreeing to a write to one path does not release a write to another. It is spent the moment it is used, and it expires. A tool the policy denies outright is not approvable: that is a standing rule you wrote, not a question you were asked, and the command says so and points at the policy file.
 
-## The three screens
+## The two screens
 
 - **Pre-call.** Before a tool call is forwarded: is it destructive, does it send private data or secrets outside, does it break the policy written in plain English, how bad would it be if it ran.
 - **Post-result.** Before a tool result reaches the agent: does the content try to instruct the AI reading it, which block does it, does it expose a secret, how much harm would following it cause.
-- **Tool list.** When a server advertises its tools: do any descriptions carry instructions for the model beyond describing the tool, and have they changed since you last approved the server.
 
 Each screen combines deterministic rules in code with a small battery of typed, calibrated judgments from [Jev](https://docs.typesafe.ai), TypeSafe's System One model.
+
+Alongside them, the tool list a server advertises is compared against the one it first advertised. A rewritten description, a tool that appeared, and a tool that vanished are each reported. That comparison is a local digest: it sends nothing anywhere, and it never withholds the list, because a client that cannot read the tool list cannot call anything. `agent-chaperone trust <server>` accepts a change once you have looked at it.
+
+What that does not do is read the descriptions. A server whose tool list arrives already carrying an instruction is caught only once it changes, so the first list you ever receive from a server is still yours to read.
 
 ## Commands
 
@@ -133,6 +136,7 @@ agent-chaperone [options] -- <command> [args...]   Wrap and screen a server
 agent-chaperone log [--follow]                     Read this session's decisions
 agent-chaperone show <id>                          Print what was held or withheld
 agent-chaperone approve <id>                       Let one held call through, once
+agent-chaperone trust <server>                     Accept the tools a server now advertises
 agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 ```
 
@@ -165,7 +169,7 @@ Methodology, per-threshold tables, the misses, and the raw recorded model respon
 
 ## Design
 
-- [`docs/design.md`](./docs/design.md): architecture, the three screens and their questions, policy file, audit log, privacy, and performance budget.
+- [`docs/design.md`](./docs/design.md): architecture, the screens and their questions, policy file, audit log, privacy, and performance budget.
 - [`docs/hooks.md`](./docs/hooks.md): screening a client's own tools.
 - [`docs/adr/`](./docs/adr/): the decisions behind the design and why.
 - [`ROADMAP.md`](./ROADMAP.md): what lands in which version.

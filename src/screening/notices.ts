@@ -125,3 +125,27 @@ export function annotated(blocks: readonly Block[], block: number | undefined): 
     .join('\n\n');
   return `${banner}\n\n${body}`;
 }
+
+/**
+ * A server advertising a different set of tools than the one it was first seen
+ * with.
+ *
+ * Addressed to the person, not the agent: the tool list is how a client learns
+ * what a server can do, and a change in it is a question about whether the
+ * server is still the one that was installed. Nothing is withheld, because a
+ * client that cannot read the tool list cannot call anything at all.
+ */
+export function toolListChanged(
+  server: string,
+  changes: readonly { readonly kind: 'added' | 'removed' | 'changed'; readonly name: string }[],
+  recordedAt: string | undefined,
+  accept: string,
+): string {
+  const described = changes.map((one) => `  ${one.kind.padEnd(7)} ${one.name}`).join('\n');
+  const since = recordedAt === undefined ? '' : ` since ${recordedAt.slice(0, 10)}`;
+  return [
+    `${server} is advertising tools that differ from the ones it first advertised${since}:`,
+    described,
+    `If you expected this, run: ${accept}`,
+  ].join('\n');
+}
