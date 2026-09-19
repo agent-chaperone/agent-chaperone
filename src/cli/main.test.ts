@@ -12,6 +12,7 @@ import {
   isEntryPoint,
   parseArguments,
   parseCommand,
+  runTask,
   upstreamTargetOf,
   run,
   runFollow,
@@ -144,6 +145,85 @@ describe('upstreamTargetOf', () => {
   it('does not treat a non-http scheme as a URL, because it is not one this can reach', () => {
     expect(target(['--', 'file:///srv/server.js']).kind).toBe('command');
     expect(target(['--', 'ws://example.com/mcp']).kind).toBe('command');
+  });
+});
+
+describe('the task command', () => {
+  let state: string;
+  beforeEach(() => {
+    state = mkdtempSync(join(tmpdir(), 'chaperone-task-cli-'));
+    vi.stubEnv('XDG_STATE_HOME', state);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(state, { recursive: true, force: true });
+  });
+
+  function io() {
+    const output = new PassThrough();
+    const out: string[] = [];
+    output.on('data', (chunk: Buffer) => out.push(chunk.toString()));
+    return {
+      input: new PassThrough(),
+      output,
+      errorOutput: new PassThrough(),
+      text: () => out.join(''),
+    };
+  }
+
+  it('parses text, and the clear flag', () => {
+    expect(parseCommand(['task', 'fix', 'the', 'redirect'])).toEqual({
+      kind: 'task',
+      clear: false,
+      text: 'fix the redirect',
+    });
+    expect(parseCommand(['task', '--clear'])).toEqual({ kind: 'task', clear: true });
+    expect(parseCommand(['task'])).toEqual({ kind: 'task', clear: false });
+  });
+
+  it('records a task and reads it back', () => {
+    const where = mkdtempSync(join(tmpdir(), 'proj-'));
+    const first = io();
+    runTask({ text: 'fix the login redirect', clear: false }, first, where);
+    expect(first.text()).toContain('Recorded');
+
+    const second = io();
+    runTask({ clear: false }, second, where);
+    expect(second.text()).toContain('fix the login redirect');
+    rmSync(where, { recursive: true, force: true });
+  });
+
+  it('says plainly when there is none, rather than printing nothing', () => {
+    const streams = io();
+    runTask({ clear: false }, streams, '/nowhere/in/particular');
+
+    expect(streams.text()).toContain('No task recorded here');
+  });
+
+  it('clears, and says whether there was one', () => {
+    const where = mkdtempSync(join(tmpdir(), 'proj-'));
+    runTask({ text: 'something', clear: false }, io(), where);
+
+    const cleared = io();
+    runTask({ clear: true }, cleared, where);
+    expect(cleared.text()).toContain('Cleared');
+
+    const again = io();
+    runTask({ clear: true }, again, where);
+    expect(again.text()).toContain('no task recorded');
+    rmSync(where, { recursive: true, force: true });
+  });
+
+  it('keeps one project out of another', () => {
+    const a = mkdtempSync(join(tmpdir(), 'proj-a-'));
+    const b = mkdtempSync(join(tmpdir(), 'proj-b-'));
+    runTask({ text: 'task for a', clear: false }, io(), a);
+
+    const inB = io();
+    runTask({ clear: false }, inB, b);
+    expect(inB.text()).toContain('No task recorded here');
+    rmSync(a, { recursive: true, force: true });
+    rmSync(b, { recursive: true, force: true });
   });
 });
 

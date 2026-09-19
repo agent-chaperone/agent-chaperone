@@ -283,3 +283,12 @@ export {
   type ToolListReview,
   type ToolPrint,
 } from './toollist/index.js';
+
+export {
+  DEFAULT_TTL_MS as TASK_TTL_MS,
+  MAX_TASK_CHARS,
+  clearTask,
+  readTask,
+  writeTask,
+  type Task,
+} from './task/index.js';

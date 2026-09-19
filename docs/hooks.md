@@ -88,6 +88,41 @@ Text is not always at the top level, and that part is load-bearing. A file read 
 
 When a result has no text field at all, there is nothing to put a notice in that the client would accept. The command says so in `additionalContext` instead of pretending, and the audit log records that the content could not be withheld.
 
+## Recording what the agent was asked to do
+
+One question the screens can ask is whether a call has anything to do with what the user actually wanted, and it is the only one that needs something no tool call contains. Without a recorded task it is never sent.
+
+`agent-chaperone task` records one, scoped to the working directory:
+
+```
+agent-chaperone task "fix the login redirect, nothing outside src/auth"
+agent-chaperone task            # read it back
+agent-chaperone task --clear
+```
+
+The proxy and both hook commands read it when they run. It is believed for twelve hours and then ignored, because a stale task is worse than none: the screen would judge today's calls against intent the user has moved on from, and be confidently wrong rather than silent.
+
+A client that knows what the user asked can record it without anyone typing. On Claude Code, a `UserPromptSubmit` hook receives the prompt on stdin and can hand it straight over:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r .prompt | xargs -0 agent-chaperone task"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Worth knowing before turning that on. The prompt is sent to the model backend with every screened call afterwards, so this hands over more than a tool call alone would, and `hold_off_task` defaults to `0.9` because a wrong answer here blocks work the user asked for. Read your own log in shadow mode before letting it hold anything.
+
 ## Other clients
 
 Cursor documents a comparable hook system, and Codex has not been checked. Each client's contract differs in what a post-tool hook may replace, and that difference decides whether the post-result screen can withhold anything or only annotate it. The entries above are for Claude Code, written against its published hook reference. Adding another client means reading that client's contract rather than assuming this one carries over.

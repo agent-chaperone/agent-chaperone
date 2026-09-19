@@ -71,6 +71,8 @@ A proxy sees MCP traffic. It does not see the shell, the file edits or the web f
 
 The worked configuration, what each command answers, and what the hooks do not see are in [`docs/hooks.md`](./docs/hooks.md).
 
+One question needs something no tool call contains: whether a call has anything to do with what you actually asked for. `agent-chaperone task "fix the login redirect"` records that for the directory you are in, and the proxy and the hooks both read it. Without one, the question is never sent. It is believed for twelve hours, because a stale task would have the screen judging today's calls against last week's intent.
+
 ## The three modes
 
 | Mode | What it does |
