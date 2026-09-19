@@ -302,3 +302,12 @@ export {
   type Replay,
   type Summary,
 } from './report/index.js';
+
+export {
+  COMMAND as WRAP_COMMAND,
+  formatChanges,
+  isWrapped,
+  rewrite,
+  type Change as WrapChange,
+  type Rewrite,
+} from './wrap/index.js';

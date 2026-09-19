@@ -42,6 +42,8 @@ One change to the client's MCP configuration. Everything after `--` is the serve
 }
 ```
 
+`agent-chaperone wrap <config>` does that edit for you. It prints what it would change and writes nothing until you add `--write`, and it keeps the original beside the file, because a client will not start without this file and a bad edit breaks every server at once. `--unwrap` takes it back out. Running it twice changes nothing either way.
+
 ## Screening a client's own tools
 
 A proxy sees MCP traffic. It does not see the shell, the file edits or the web fetches a client runs itself, and on the clients people actually use those are where most of the damage lives. Two commands read a client's hook payload and answer on stdout, against the same policy file and the same log.

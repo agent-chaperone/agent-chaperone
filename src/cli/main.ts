@@ -7,7 +7,7 @@
  * the path of a real session.
  */
 
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
@@ -31,6 +31,7 @@ import { createScreeningGate, type Judgment } from '../screening/index.js';
 import { forgetBaseline } from '../toollist/index.js';
 import { clearTask, readTask, writeTask } from '../task/index.js';
 import { formatReplay, formatSummary, replay, summarise } from '../report/index.js';
+import { formatChanges, rewrite } from '../wrap/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
@@ -41,6 +42,7 @@ const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
   agent-chaperone approve <id>                       Let one held call through, once
   agent-chaperone trust <server>                     Accept the tools a server now advertises
   agent-chaperone task [text|--clear]                Say what the agent is working on, or read it back
+  agent-chaperone wrap <config> [--write|--unwrap]   Put a client's MCP servers behind the screen
   agent-chaperone report                             What the log adds up to, and what enforcing would stop
   agent-chaperone replay [--policy <path>]           Decide again with another policy, over what was judged
   agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
@@ -124,6 +126,12 @@ export type Command =
   | { readonly kind: 'approve'; readonly id: string }
   | { readonly kind: 'trust'; readonly server: string }
   | { readonly kind: 'task'; readonly text?: string; readonly clear: boolean }
+  | {
+      readonly kind: 'wrap-config';
+      readonly path: string;
+      readonly write: boolean;
+      readonly unwrap: boolean;
+    }
   | { readonly kind: 'report' }
   | { readonly kind: 'replay'; readonly policyPath?: string }
   | { readonly kind: 'hook'; readonly side: 'pre' | 'post' }
@@ -144,6 +152,17 @@ export function parseCommand(argv: readonly string[]): Command {
   if (first === 'hook') {
     const side = rest.find((one) => !one.startsWith('-'));
     return side === 'pre' || side === 'post' ? { kind: 'hook', side } : { kind: 'usage' };
+  }
+  if (first === 'wrap') {
+    const path = rest.find((one) => !one.startsWith('-'));
+    return path === undefined
+      ? { kind: 'usage' }
+      : {
+          kind: 'wrap-config',
+          path,
+          write: rest.includes('--write'),
+          unwrap: rest.includes('--unwrap'),
+        };
   }
   if (first === 'report') {
     return { kind: 'report' };
@@ -394,6 +413,63 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
  * one project. With no argument it prints what is recorded, which is also the
  * only way to find out that something set one.
  */
+/**
+ * `wrap`: put a client's MCP servers behind the screen.
+ *
+ * Shows what it would do and changes nothing, until asked. This edits a file a
+ * client refuses to start without, and a preview costs one command where a bad
+ * edit costs every server at once. `--write` applies it, after copying the
+ * original beside it.
+ */
+export function runWrap(
+  asked: { readonly path: string; readonly write: boolean; readonly unwrap: boolean },
+  io: RunStreams,
+): number {
+  let text: string;
+  try {
+    text = readFileSync(asked.path, 'utf8');
+  } catch {
+    io.errorOutput.write(`agent-chaperone: ${asked.path} could not be read.\n`);
+    return EXIT_USAGE;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    io.errorOutput.write(
+      `agent-chaperone: ${asked.path} is not valid JSON: ${messageFor(error)}\n`,
+    );
+    return EXIT_USAGE;
+  }
+
+  const done = rewrite(parsed, { unwrap: asked.unwrap });
+  const acted = done.changes.filter(
+    (one) => one.kind === 'wrapped' || one.kind === 'unwrapped',
+  ).length;
+  io.output.write(`${formatChanges(done.changes, asked.unwrap)}\n`);
+
+  if (!asked.write) {
+    io.output.write(
+      acted === 0 ? '' : `\nNothing was written. Run it again with --write to apply.\n`,
+    );
+    return 0;
+  }
+  if (acted === 0) {
+    return 0;
+  }
+  // The original is kept beside it. A client will not start without this file,
+  // and a copy is the difference between a mistake and an evening.
+  const backup = `${asked.path}.before-agent-chaperone`;
+  try {
+    writeFileSync(backup, text, { flag: 'wx' });
+  } catch {
+    // Already there from a previous run, which is the copy worth keeping.
+  }
+  writeFileSync(asked.path, `${JSON.stringify(done.config, null, 2)}\n`);
+  io.output.write(`\nWritten. The original is at ${backup}.\n`);
+  return 0;
+}
+
 /**
  * `report`: what the log adds up to.
  *
@@ -650,6 +726,9 @@ export async function run(
   }
   if (asked.kind === 'task') {
     return runTask(asked, io);
+  }
+  if (asked.kind === 'wrap-config') {
+    return runWrap(asked, io);
   }
   if (asked.kind === 'report') {
     return runReport(io);
