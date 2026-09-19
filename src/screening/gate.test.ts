@@ -909,6 +909,89 @@ describe('with no backend configured', () => {
   });
 });
 
+describe('a call nothing screened, either way', () => {
+  // The defect this covers: a backend that was never configured took a
+  // different path out of the gate than one that could not answer, so running
+  // with no key was less protective than running with a key that did not work.
+  // These assert the pair together, because the bug was the difference.
+  const DANGEROUS = { command: 'rm -rf /' };
+
+  const neverAsked = (policy: Policy) => live(policy, undefined);
+  const askedAndFailed = (policy: Policy) =>
+    live(policy, {
+      ask: () =>
+        Promise.resolve({
+          ok: false as const,
+          failure: { kind: 'unavailable' as const, retryable: true, message: 'down' },
+        }),
+    } as unknown as Backend);
+
+  it('holds a destructive call in enforce mode whether or not a backend exists', async () => {
+    for (const build of [neverAsked, askedAndFailed]) {
+      const h = build(parsePolicy('mode: enforce'));
+      h.clientInput.write(`${call(1, 'shell', DANGEROUS)}\n`);
+      await h.settle();
+
+      expect(h.judgments[0]).toMatchObject({
+        screened: false,
+        intended: { kind: 'hold', reason: 'not-screened' },
+      });
+      expect(h.upstream()).toBe('');
+    }
+  });
+
+  it('holds any call in strict mode whether or not a backend exists', async () => {
+    for (const build of [neverAsked, askedAndFailed]) {
+      const h = build(parsePolicy('mode: strict'));
+      h.clientInput.write(`${call(1, 'read_file', { path: 'a.ts' })}\n`);
+      await h.settle();
+
+      expect(h.judgments[0]).toMatchObject({
+        screened: false,
+        intended: { kind: 'hold', reason: 'not-screened' },
+      });
+      expect(h.upstream()).toBe('');
+    }
+  });
+
+  it('still forwards an ordinary call in enforce mode, either way', async () => {
+    for (const build of [neverAsked, askedAndFailed]) {
+      const h = build(parsePolicy('mode: enforce'));
+      h.clientInput.write(`${call(1, 'read_file', { path: 'a.ts' })}\n`);
+      await h.settle();
+
+      expect(h.judgments[0]).toMatchObject({ screened: false, applied: { kind: 'forward' } });
+      expect(h.upstream()).toContain('read_file');
+    }
+  });
+
+  it('forwards even a destructive call in shadow mode, either way', async () => {
+    for (const build of [neverAsked, askedAndFailed]) {
+      const h = build(parsePolicy('mode: shadow'));
+      h.clientInput.write(`${call(1, 'shell', DANGEROUS)}\n`);
+      await h.settle();
+
+      expect(h.judgments[0]).toMatchObject({ applied: { kind: 'forward' } });
+      expect(h.upstream()).toContain('shell');
+    }
+  });
+
+  it('names the list that caught a denied call, rather than reporting it unscreened', async () => {
+    for (const build of [neverAsked, askedAndFailed]) {
+      const h = build(
+        parsePolicy('mode: strict\nservers:\n  files:\n    deny_tools: ["delete_*"]\n'),
+      );
+      h.clientInput.write(`${call(1, 'delete_file', { path: 'a.ts' })}\n`);
+      await h.settle();
+
+      expect(h.judgments[0]).toMatchObject({
+        intended: { kind: 'block', reason: 'deny-list', detail: 'delete_*' },
+      });
+      expect(h.upstream()).toBe('');
+    }
+  });
+});
+
 describe('what the request carries', () => {
   it('sends the policy and the task when they are configured', async () => {
     const backend = scripted(() => false);

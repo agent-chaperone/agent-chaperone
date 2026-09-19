@@ -179,7 +179,9 @@ export async function runPreHook(text: string, options: HookOptions): Promise<st
   const decided =
     approval !== undefined
       ? { intended: { kind: 'forward' } as CallAction, applied: { kind: 'forward' } as CallAction }
-      : failure === undefined
+      : // A backend that was never configured leaves exactly as much unjudged as
+        // one that could not be reached, so the two take the same path out.
+        screened
         ? decidePreCall(answers, findings, policy)
         : {
             intended: onCallFailure(policy.mode, findings, rules.dangerous.length > 0),

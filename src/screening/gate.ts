@@ -218,7 +218,12 @@ function defaultId(): string {
 }
 
 /**
- * How a backend that could not answer is handled, from ADR-0002.
+ * How a call with no model answer behind it is handled, from ADR-0002.
+ *
+ * Two ways to arrive here and they are the same situation: the backend was
+ * asked and could not answer, or there was no backend to ask. Running with no
+ * key must not be less protective than running with a key that does not work,
+ * so both come through this function.
  *
  * An agent session that stalls because a screening request failed is worse than
  * one that ran unscreened for a message, so only `strict` stops. `enforce` holds
@@ -226,6 +231,16 @@ function defaultId(): string {
  * that costs nothing and does not depend on the model being reachable.
  */
 export function onCallFailure(mode: Mode, rules: CallRuleFindings, dangerous: boolean): CallAction {
+  // A list match is a decision the deterministic layer made on its own, and it
+  // does not become less certain because no model was asked. It is answered
+  // first so that the log says which list caught the call, rather than the
+  // weaker statement that nothing was screened.
+  if (rules.denied_by !== undefined) {
+    return { kind: 'block', reason: 'deny-list', detail: rules.denied_by };
+  }
+  if (rules.outside_allow_list === true) {
+    return { kind: 'block', reason: 'outside-allow-list' };
+  }
   // The reason is that nothing was judged, not that anything was judged
   // destructive. Saying otherwise would have the tool report a finding it never
   // made, to the agent and to whoever reads the log.
@@ -235,9 +250,7 @@ export function onCallFailure(mode: Mode, rules: CallRuleFindings, dangerous: bo
   if (mode === 'enforce' && dangerous) {
     return { kind: 'hold', reason: 'not-screened', probability: 0 };
   }
-  return rules.denied_by === undefined && rules.outside_allow_list !== true
-    ? { kind: 'forward' }
-    : { kind: 'block', reason: rules.denied_by === undefined ? 'outside-allow-list' : 'deny-list' };
+  return { kind: 'forward' };
 }
 
 export function onResultFailure(mode: Mode): ResultAction {
@@ -363,7 +376,10 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
             intended: { kind: 'forward' } as CallAction,
             applied: { kind: 'forward' } as CallAction,
           }
-        : failure === undefined
+        : // Answered, not merely attempted. A backend that was never configured
+          // leaves exactly as much unjudged as one that could not be reached,
+          // so the two take the same path out of here.
+          screened
           ? decidePreCall(answers, findings, policy)
           : {
               intended: onCallFailure(policy.mode, findings, rules.dangerous.length > 0),
