@@ -40,6 +40,7 @@ export type {
   CallJudgment,
   Judgment,
   ResultJudgment,
+  ToolListJudgment,
   ScreeningOptions,
 } from './gate.js';
 export type { ResultShape, ResultText, ToolCall } from './mcp.js';

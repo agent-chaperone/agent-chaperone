@@ -6,7 +6,7 @@
  */
 
 export { sessionsDirectory, sessionFileName, stateDirectory } from './paths.js';
-export { PRICE_PER_MTOK, costOf, formatRecord, toRecord } from './record.js';
+export { PRICE_PER_MTOK, costOf, formatRecord, toRecord, toToolListRecord } from './record.js';
 export { DIRECTORY_MODE, FILE_MODE, createAuditLog, sessionPath } from './writer.js';
 export { toEvictionRecord } from './record.js';
 export {

@@ -337,9 +337,13 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
     return 0;
   }
   const body =
-    record.kind === 'result'
-      ? record.content.text
-      : JSON.stringify(record.content.arguments, null, 2);
+    record.kind === 'tool-list'
+      ? Object.entries(record.content.descriptions ?? {})
+          .map(([name, description]) => `${name}:\n${description}`)
+          .join('\n\n')
+      : record.kind === 'result'
+        ? record.content.text
+        : JSON.stringify(record.content.arguments, null, 2);
   // Printed to a terminal, and withheld in the first place because something in
   // it was addressed to whoever reads it. Control characters come out.
   io.output.write(`${formatRecord(record)}\n\n${scrubForTerminal(body ?? '')}\n`);

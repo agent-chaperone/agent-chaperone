@@ -188,7 +188,35 @@ export interface ResultJudgment {
   readonly id: string;
 }
 
-export type Judgment = CallJudgment | ResultJudgment;
+/**
+ * What the tool-list screen concluded about one listing.
+ *
+ * No action, because the list is always relayed. What it carries is the
+ * comparison against what this server advertised first, and what reading the
+ * descriptions found, when that is switched on.
+ */
+export interface ToolListJudgment {
+  readonly side: 'tool-list';
+  readonly server: string;
+  readonly mode: Mode;
+  /** False when no description was read, so a quiet judgment is not an all-clear. */
+  readonly screened: boolean;
+  /** True when this server had no record and this listing became one. */
+  readonly learned: boolean;
+  readonly tools: number;
+  readonly changes: readonly { readonly kind: string; readonly name: string }[];
+  readonly steering: readonly { readonly name: string; readonly probability: number }[];
+  readonly unscreened: readonly string[];
+  readonly asked: number;
+  readonly threshold: number;
+  readonly recordedAt?: string;
+  /** The descriptions that were reported, by tool name. */
+  readonly descriptions: Readonly<Record<string, string>>;
+  readonly usage?: BackendUsage;
+  readonly id: string;
+}
+
+export type Judgment = CallJudgment | ResultJudgment | ToolListJudgment;
 
 export interface ScreeningOptions {
   readonly policy: Policy;
@@ -656,6 +684,32 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       ...(askAbout === undefined ? {} : { ask: askAbout }),
     })
       .then((review) => {
+        const descriptions = Object.fromEntries(
+          review.steering.map((one) => [
+            one.name,
+            String(
+              assembled.tools.find((tool) => String(tool.name) === one.name)?.description ?? '',
+            ),
+          ]),
+        );
+        report({
+          side: 'tool-list',
+          server,
+          mode: policy.mode,
+          // A listing where nothing needed asking, because every description was
+          // already answered, still counts as screened: the answers are real.
+          screened: askAbout !== undefined && review.unscreened.length === 0,
+          learned: review.learned,
+          tools: review.tools.length,
+          changes: review.changes,
+          steering: review.steering,
+          unscreened: review.unscreened,
+          asked: review.asked,
+          threshold: policy.thresholds.tool_list.report_steers,
+          ...(review.recordedAt === undefined ? {} : { recordedAt: review.recordedAt }),
+          descriptions,
+          id: newId(),
+        });
         if (!review.learned && review.changes.length > 0) {
           options.onNotice?.(
             toolListChanged(
