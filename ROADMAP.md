@@ -44,22 +44,36 @@ The smallest version that protects a real session.
 
 ---
 
-## M2: v0.2.0, every client and every transport
+## M2: v0.2.0, remote servers and a watch on the tool list
+
+**Status:** released
+
+Reaching servers that are not a local process, and noticing when a server stops being the one you installed.
+
+- Streamable HTTP upstream servers, screened by the same code as a stdio server
+- Tool-list comparison: a digest of each tool's description and input schema, recorded on first sight and compared on every later list, with `agent-chaperone trust <server>` to accept a change
+- `screen_tool_list` as a per-server switch, separate from the screens that talk to a model
+- A deterministic finding is acted on when no model was asked, so running with no key is no less protective than running with one that fails
+
+**Exit criteria:** an agent pointed at a Streamable HTTP server has its calls and results screened exactly as a local one does, and a server that rewrites a tool description between sessions is reported.
+
+---
+
+## M3: v0.3.0, every client
 
 **Status:** not started
 
-- Streamable HTTP upstream servers
+- Tool-list descriptions screened for instructions, not only compared against what was recorded
 - Elicitation-based confirmation when the client supports it
-- Tool-list screen with description hashing and change warnings
 - `wrap` command that edits the common client configurations in place
 - OpenRouter and Vercel AI Gateway backends
 - `report` and `replay` commands
-- Judgment cache keyed by content hash, chunking for large results
+- Judgment cache keyed by content hash
 - `task` command and a hook example that records the current task
 
 ---
 
-## M3: v0.3.0, receipts and tuning
+## M4: v0.4.0, receipts and tuning
 
 **Status:** not started
 
