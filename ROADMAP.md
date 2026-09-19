@@ -8,7 +8,7 @@ Each milestone maps to a semantic version. Versions before 1.0 may change the po
 
 ## M0: Repository and Design Foundation
 
-**Status:** in progress
+**Status:** done
 
 Tooling, CI, templates, community docs, the design document, the architecture decision records, and the screening benchmark, before any proxy code lands.
 
@@ -25,7 +25,7 @@ Tooling, CI, templates, community docs, the design document, the architecture de
 
 ## M1: v0.1.0, a working proxy
 
-**Status:** built
+**Status:** released
 
 The smallest version that protects a real session.
 

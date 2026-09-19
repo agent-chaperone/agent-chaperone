@@ -13,9 +13,9 @@ A bypass of a screen (an injection or a dangerous call that scores low) is a mod
 
 ## Security Considerations
 
-agent-chaperone handles untrusted input on every path: tool arguments, tool results, tool descriptions, resource bodies, policy files, and configuration.
+agent-chaperone handles untrusted input on every path: tool arguments, tool results, tool descriptions, resource bodies, the hook payloads a client hands it, policy files, and configuration.
 
-The proxy is not implemented yet, so the list below is the design these paths are built to rather than behavior you can audit in the repository today.
+The list below is behavior you can audit in the repository rather than a statement of intent. Each item is a thing the code does, and the tests that hold it there are next to it.
 
 - **Input validation** with Zod at every entry point, with size limits.
 - **Safe JSON parsing** inside try/catch with size guards.
