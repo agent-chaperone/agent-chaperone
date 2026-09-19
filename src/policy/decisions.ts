@@ -239,6 +239,26 @@ export function decidePostResult(
   );
 }
 
+/**
+ * Whether the screen concluded a credential is in the content.
+ *
+ * Read from the answer and its threshold, never from the action that followed.
+ * Two things stand between the answer and the action and both drop it. On the
+ * call side a call that exfiltrates and also carries a credential is held for
+ * exfiltration, because that arm is tested first. On the result side the floors
+ * rank quarantine above redact, so a result that carried a credential and was
+ * also padded past the block cap comes back quarantined. Either way the action
+ * stops naming the credential, and both levers belong to whoever wrote the
+ * content.
+ */
+export function credentialInArguments(answers: CallAnswers, policy: Policy): boolean {
+  return reaches(answers.secret_in_args, policy.thresholds.call.hold_exfiltration);
+}
+
+export function credentialInResult(answers: ResultAnswers, policy: Policy): boolean {
+  return reaches(answers.exposes_secret, policy.thresholds.result.redact_secret);
+}
+
 function intendedResultAction(
   answers: ResultAnswers,
   rules: ResultRuleFindings,

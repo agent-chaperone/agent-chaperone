@@ -13,6 +13,7 @@
  */
 
 import { sanitizeMessage } from '../backends/index.js';
+import { MAX_MATCHES } from '../rules/index.js';
 import type { Judgment } from '../screening/index.js';
 
 /**
@@ -73,6 +74,51 @@ export interface RecordOptions {
   readonly storeContent: boolean;
 }
 
+/**
+ * What a record holds in place of content it must not keep.
+ *
+ * The deterministic patterns run before the model is asked, so whatever they
+ * matched is already replaced in the text a record would store. A judgment that
+ * a credential is present is the backstop for a shape they did not match, which
+ * means that credential is still in that text in full. Storing it anyway put a
+ * credential on disk by the same judgment that concluded one was there, and the
+ * agent was protected while the log was not. Nothing in the battery says where
+ * it is, so there is nothing to remove but the whole thing.
+ */
+const CREDENTIAL_FOUND =
+  '[content not stored: a credential was found that the patterns could not locate]';
+
+/**
+ * At the cap the scan stopped looking, so secret shapes past that point are
+ * still in the content. Nothing here can say which ones survived, and the call
+ * side had no guard for this at all: only the result text was checked, while
+ * arguments with the same problem were written out whole.
+ */
+const TOO_MANY = '[content not stored: too many secret shapes to redact them all]';
+
+function tooManyToRedact(judgment: Judgment): boolean {
+  return judgment.secrets.length >= MAX_MATCHES;
+}
+
+function keep(judgment: Judgment, content: unknown): unknown {
+  if (tooManyToRedact(judgment)) {
+    return TOO_MANY;
+  }
+  return foundCredential(judgment) ? CREDENTIAL_FOUND : content;
+}
+
+function foundCredential(judgment: Judgment): boolean {
+  // The flag is read from the answers at the point they were read. The action is
+  // checked too, so a caller that forgets the flag still cannot store a
+  // credential the action itself names.
+  if (judgment.credential) {
+    return true;
+  }
+  return judgment.side === 'result'
+    ? judgment.intended.kind === 'redact'
+    : judgment.intended.kind === 'hold' && judgment.intended.reason === 'secret-in-arguments';
+}
+
 /** One judgment, as the line that goes on disk. */
 export function toRecord(judgment: Judgment, options: RecordOptions): AuditRecord {
   const usage = judgment.usage;
@@ -106,7 +152,9 @@ export function toRecord(judgment: Judgment, options: RecordOptions): AuditRecor
       ...common,
       kind: 'call',
       ...(judgment.approved === undefined ? {} : { approved: judgment.approved }),
-      ...(options.storeContent ? { content: { arguments: judgment.arguments } } : {}),
+      ...(options.storeContent
+        ? { content: { arguments: keep(judgment, judgment.arguments) } }
+        : {}),
     };
   }
   return {
@@ -115,7 +163,7 @@ export function toRecord(judgment: Judgment, options: RecordOptions): AuditRecor
     blocks: judgment.blocks,
     unscreened: judgment.unscreened,
     hidden: judgment.hidden,
-    ...(options.storeContent ? { content: { text: judgment.text } } : {}),
+    ...(options.storeContent ? { content: { text: String(keep(judgment, judgment.text)) } } : {}),
   };
 }
 

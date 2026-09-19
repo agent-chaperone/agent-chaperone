@@ -29,9 +29,16 @@ import type {
 } from '../policy/index.js';
 import { callFingerprint, recordHold, takeApproval } from '../approvals/index.js';
 import { sanitizeMessage } from '../backends/index.js';
-import { decidePostResult, decidePreCall, policyForServer, shouldScreen } from '../policy/index.js';
+import {
+  credentialInArguments,
+  credentialInResult,
+  decidePostResult,
+  decidePreCall,
+  policyForServer,
+  shouldScreen,
+} from '../policy/index.js';
 import type { Envelope, Gate, GateVerdict, PendingRequest } from '../proxy/index.js';
-import { MAX_MATCHES, inspectResult, inspectToolCall } from '../rules/index.js';
+import { inspectResult, inspectToolCall } from '../rules/index.js';
 import {
   buildPostResultScreens,
   buildPreCallScreen,
@@ -111,6 +118,14 @@ export interface CallJudgment {
   readonly answers: CallAnswers;
   readonly rules: CallRuleFindings;
   readonly secrets: readonly string[];
+  /**
+   * The screen concluded a credential is in the content, whatever was finally
+   * done about it. Read from the answers rather than from the action, because a
+   * floor can raise the action above `redact` and did: a result padded past the
+   * block cap was quarantined, which outranks redact, and the credential was
+   * written to the log because the action no longer named it.
+   */
+  readonly credential: boolean;
   /** The arguments as they went to the model, which is to say already redacted. */
   readonly arguments: unknown;
   /**
@@ -151,6 +166,14 @@ export interface ResultJudgment {
   };
   /** Concealment found anywhere in the result, including in text no block holds. */
   readonly hidden: readonly string[];
+  /**
+   * The screen concluded a credential is in the content, whatever was finally
+   * done about it. Read from the answers rather than from the action, because a
+   * floor can raise the action above `redact` and did: a result padded past the
+   * block cap was quarantined, which outranks redact, and the credential was
+   * written to the log because the action no longer named it.
+   */
+  readonly credential: boolean;
   /** The result text as it went to the model, which is to say already redacted. */
   readonly text: string;
   readonly usage?: BackendUsage;
@@ -350,6 +373,11 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
                   : onCallFailure(policy.mode, findings, rules.dangerous.length > 0),
             };
 
+    // An approved retry asks nothing, so the answers are empty and the screen's
+    // own conclusion is gone. It travels on the approval instead: approving
+    // releases the call, not the record of what was in it.
+    const credential = credentialInArguments(answers, policy) || approval?.credential === true;
+
     const id = newId();
     report({
       side: 'call',
@@ -361,6 +389,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       mode: policy.mode,
       intended: decision.intended,
       applied: decision.applied,
+      credential,
       answers,
       rules: findings,
       secrets: rules.secrets,
@@ -380,7 +409,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       // What the id in the agent's message stands for. Written beside the log
       // rather than in it, so `approve` works whether or not content was stored
       // and whether or not the log could be written at all.
-      recordHold(id, server, call.name, fingerprint);
+      recordHold(id, server, call.name, fingerprint, { credential });
     }
     const text =
       action.kind === 'block'
@@ -490,6 +519,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       mode: policy.mode,
       intended,
       applied,
+      credential: credentialInResult(answers, policy),
       answers,
       rules: findings,
       secrets: inspection.secrets,
@@ -503,10 +533,7 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       // At the cap the redaction stopped looking, so later secret shapes are
       // still in the text. The audit log must not hold a credential the request
       // did not carry, and nothing here can say which ones survived.
-      text:
-        inspection.secrets.length >= MAX_MATCHES
-          ? '[content not stored: too many secret shapes to redact them all]'
-          : inspection.redacted_text,
+      text: inspection.redacted_text,
       ...(usage === undefined ? {} : { usage }),
       ...(failure === undefined ? {} : { failure }),
       id,
