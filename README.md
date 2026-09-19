@@ -2,7 +2,7 @@
 
 > A calibrated firewall for AI agent tool calls.
 
-[![npm](https://img.shields.io/npm/v/agent-chaperone.svg)](https://www.npmjs.com/package/agent-chaperone) [![CI](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/agent-chaperone/agent-chaperone/blob/main/LICENSE)
+[![npm](https://img.shields.io/npm/v/agent-chaperone.svg)](https://www.npmjs.com/package/agent-chaperone) [![CI](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/agent-chaperone/agent-chaperone/blob/main/LICENSE) [![Agent skill](https://img.shields.io/badge/agent%20skill-npx%20skills%20add-2b7fff)](./skills/agent-chaperone/SKILL.md)
 
 agent-chaperone screens an AI agent's tool calls before they run, and the tool results those calls return before the agent reads them. Every decision comes back as a probability, every threshold lives in a policy file rather than a prompt, and every judgment is written to a local log with the numbers that produced it.
 
