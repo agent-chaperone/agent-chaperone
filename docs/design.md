@@ -261,8 +261,11 @@ redaction:
 | `bearer_token` | A credential in an authorization header, which carries no field name |
 | `connection_string` | The password inside a URL, leaving the host readable |
 | `generic_api_key` | A named field assigned a long opaque value, including an AWS secret access key |
+| `provider_key` | A credential carrying a prefix its issuer documents, such as `sk-ant-`, `sk-`, `AIza` or `glpat-`, wherever it appears |
 
-A credential shape buried inside a longer token is deliberately not matched, so that hashes and identifiers are not redacted as secrets. The model question is the backstop for what that misses.
+A credential shape buried inside a longer token is deliberately not matched, so that hashes and identifiers are not redacted as secrets. `provider_key` pins each issuer's own format rather than guessing at one, for the same reason, and it is tested before the field-name pattern because the match cap is spent in pattern order: whichever pattern sits last is the first to be starved by content that pads itself with cheap matches, and this is the one that needs no field name beside the credential to find it.
+
+A field name and its value do not always arrive in the same string. In a shell command or a header line they do, which is what the field-name pattern reads. In structured tool arguments the name is a key and the value is scanned on its own, so `{"headers": {"api_key": "..."}}` matched nothing until the key itself was read as the name. That is the ordinary shape of a tool call rather than an edge case. The model question is the backstop for what that misses.
 
 Every value a decision compares against is a number in this file and nowhere else, including `uncertain_severity_confidence`, which is the confidence below which a hold is labelled uncertain rather than stated flatly. Changing one does not re-run inference: `agent-chaperone replay --policy new.yaml` applies a policy to the recorded judgments in the audit log and shows what would have changed.
 
