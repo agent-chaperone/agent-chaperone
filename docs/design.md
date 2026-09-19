@@ -38,13 +38,13 @@ Remote servers over Streamable HTTP:
   "mcpServers": {
     "github": {
       "command": "npx",
-      "args": ["-y", "agent-chaperone", "--url", "https://api.githubcopilot.com/mcp/"]
+      "args": ["-y", "agent-chaperone", "--", "https://api.githubcopilot.com/mcp/"]
     }
   }
 }
 ```
 
-`agent-chaperone wrap <config>` rewrites a client configuration file in place, prints a diff, and asks before writing. It knows the locations for Claude Code, Claude Desktop, Cursor, and Codex.
+`agent-chaperone wrap <config>` makes that edit to a client configuration file you name. It prints what it would change and writes nothing until `--write`, and it keeps the original beside the file, because a client will not start without this file and a bad edit breaks every server at once. `--unwrap` takes it back out, and running either twice changes nothing.
 
 Backend selection, in order: `TYPESAFE_API_KEY` (direct), `OPENROUTER_API_KEY` (the OpenRouter Decisions endpoint), `AI_GATEWAY_API_KEY` (Vercel AI Gateway). With no key present the proxy runs rules-only and logs one warning at startup. It never fails to start because a key is missing.
 
