@@ -308,7 +308,7 @@ Tool arguments and results go to the selected backend. The README says so on its
 
 - One backend request per screened message, plus one per extra chunk.
 - Judgments cached by content hash, so a file read twice costs nothing the second time.
-- Measured on the benchmark: 405 ms median and 876 ms at the 95th percentile per request from a laptop, 753 input tokens per request on average, at $0.042 per million input tokens.
+- Measured on the benchmark: 753 input tokens per request on average, at $0.042 per million input tokens. Wall-clock time per request is a property of the backend and the network between it and you, so it is not quoted here.
 - Published rate limits for the model are per account; a single agent stays well inside them, and a fleet sharing one account may not.
 - No latency is added to messages that are not screened.
 

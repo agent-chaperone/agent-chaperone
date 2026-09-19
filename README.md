@@ -155,7 +155,7 @@ The screening questions were evaluated against public prompt-injection benchmark
 | Discusses injection, benign | 63 | 0 | n/a | 7 false positives | 10 false positives |
 | Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.909 / 0.980 |
 
-Latency from a laptop was 405 ms median and 876 ms at the 95th percentile, with 753 input tokens per request on average.
+Each screened call costs one model request, averaging 753 input tokens. A call the allow or deny list settles never reaches the model.
 
 Two questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either, so nothing above measures them.
 
