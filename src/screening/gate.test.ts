@@ -1018,6 +1018,53 @@ describe('what the notices actually say', () => {
     expect(h.client()).toContain('delete_*');
   });
 
+  it('keeps the parts a result came in when it only annotates them', async () => {
+    // Annotating is not withholding. Replacing the content with one block of
+    // prose collapsed a resource link into the body, so the agent read the
+    // link's own uri and name as if they were part of the answer.
+    const backend = scripted((state) => state.includes(NEEDLE));
+    const h = live(
+      parsePolicy('mode: enforce\nthresholds:\n  result:\n    quarantine_instructs: 0.99'),
+      backend,
+    );
+    h.clientInput.write(`${call(1, 'fetch', {})}\n`);
+    await h.settle(40);
+
+    h.upstreamOutput.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        result: {
+          content: [
+            { type: 'text', text: `harmless opening\n\n${NEEDLE}` },
+            {
+              type: 'resource_link',
+              uri: 'https://docs.test/page',
+              name: 'Reference page',
+              description: 'a description',
+            },
+          ],
+        },
+      })}\n`,
+    );
+    await h.settle();
+
+    expect(h.resultJudgment()).toMatchObject({ applied: { kind: 'annotate' } });
+    const parts = (
+      JSON.parse(h.client().trim()) as {
+        result: { content: Record<string, unknown>[] };
+      }
+    ).result.content;
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toEqual({
+      type: 'resource_link',
+      uri: 'https://docs.test/page',
+      name: 'Reference page',
+      description: 'a description',
+    });
+    expect(String(parts[0]?.['text'])).toContain('harmless opening');
+  });
+
   it('fences the flagged section rather than naming a number the agent cannot find', async () => {
     const backend = scripted((state) => state.includes(NEEDLE));
     const h = live(

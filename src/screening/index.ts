@@ -5,16 +5,35 @@
  * self-contained. This is where they are put in the path of real traffic.
  */
 
-export { createScreeningGate } from './gate.js';
+export {
+  MAX_SCREENED_BLOCKS,
+  ask,
+  createScreeningGate,
+  onCallFailure,
+  onResultFailure,
+  onTruncated,
+  onUnreadable,
+  stronger,
+} from './gate.js';
 export {
   RESOURCE_READ,
   TOOL_CALL,
   readResultText,
   readToolCall,
   toolError,
+  withBanner,
   withText,
 } from './mcp.js';
-export { annotated, blockedCall, heldCall, quarantined } from './notices.js';
+export {
+  annotated,
+  annotatedBanner,
+  blockedCall,
+  heldCall,
+  partlyUnscreened,
+  partlyUnscreenedBanner,
+  quarantined,
+  withheldSecret,
+} from './notices.js';
 
 export type {
   BackendUsage,
