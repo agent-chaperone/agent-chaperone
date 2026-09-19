@@ -8,6 +8,8 @@ agent-chaperone screens an AI agent's tool calls before they run, and the tool r
 
 It starts in `shadow` mode, which blocks nothing. You read your own log first and decide what you would have wanted stopped.
 
+[agentchaperone.dev](https://agentchaperone.dev) carries the same material as pages, including [the measured results](https://agentchaperone.dev/results) and [a guide for each way people set this up](https://agentchaperone.dev/guides).
+
 ## What it is not
 
 Read this part before the rest.
@@ -195,6 +197,7 @@ Methodology, per-threshold tables, the misses, and the raw recorded model respon
 - [`docs/hooks.md`](./docs/hooks.md): screening a client's own tools.
 - [`docs/adr/`](./docs/adr/): the decisions behind the design and why.
 - [`ROADMAP.md`](./ROADMAP.md): what lands in which version.
+- [agentchaperone.dev/guides](https://agentchaperone.dev/guides): putting a server behind the proxy, screening results for prompt injection, covering a client's own tools, and catching a secret on its way out.
 
 ## Contributing
 
