@@ -67,16 +67,31 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # Ties the published tarball to this commit and this run, which is a
+          # claim a security tool should be able to make about itself. The job
+          # already requests id-token: write; this is what spends it. There is no
+          # flag for it here, because changesets shells out to pnpm and pnpm to
+          # npm, and only the environment survives both hops.
+          NPM_CONFIG_PROVENANCE: true
 
       - name: Tag and create the GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v$(node -p "require('./package.json').version")"
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists; leaving it alone"
+            exit 0
+          fi
+          git tag "$TAG"
+          git push origin "$TAG"
+          # The changelog already describes this release. Generated notes list
+          # the pull requests that went into it, which is a different and worse
+          # answer to the same question, so they are only the fallback.
+          if node scripts/changelog-section.mjs "$VERSION" > "$RUNNER_TEMP/notes.md"; then
+            gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
           else
-            git tag "$TAG"
-            git push origin "$TAG"
+            echo "No changelog section for $VERSION; falling back to generated notes" >&2
             gh release create "$TAG" --title "$TAG" --generate-notes
           fi
