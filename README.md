@@ -139,6 +139,16 @@ That comparison notices a description changed and never reads it. Reading them i
 
 That question is not covered by the numbers below. Nothing in the benchmark sends it, so its threshold is a judgement rather than a figure read off a curve, and the notice says so.
 
+## For the agent itself
+
+An agent that knows this tool exists handles a blocked call better than one that guesses. The skill in [`skills/agent-chaperone`](./skills/agent-chaperone/SKILL.md) tells it what each notice means, that a held call is the user's to release and not its own, and that a withheld result is not an invitation to fetch the same thing another way.
+
+```bash
+npx skills add agent-chaperone/agent-chaperone
+```
+
+It ships in the npm package too, so a global install already has it on disk.
+
 ## Commands
 
 ```
