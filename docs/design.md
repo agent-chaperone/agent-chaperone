@@ -299,7 +299,7 @@ The file and its directory are created for the owner alone. A log that cannot be
 
 Tool arguments and results go to the selected backend. The README says so on its first screen. Controls:
 
-- Per-server `screen_results: false` and `screen_calls: false`.
+- Per-server `screen_results: false` and `screen_calls: false`. `screen_tool_list: false` is separate, because comparing an advertised tool list against the one recorded for that server is a local digest and sends nothing anywhere.
 - Regex redaction of secret-shaped strings before anything is sent.
 - Size caps: results above a configurable byte limit are screened by their first and last chunks only, and the log records that the middle was skipped.
 - A pointer to the backend's data handling terms so users can check them against their own requirements.

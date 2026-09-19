@@ -52,6 +52,13 @@ const serverPolicy = z.strictObject({
   deny_tools: z.array(z.string()).default([]),
   screen_calls: z.boolean().default(true),
   screen_results: z.boolean().default(true),
+  /**
+   * Compare the tools a server advertises against the ones it first advertised.
+   * Separate from the two above because it costs nothing and sends nothing: the
+   * comparison is a local digest, so turning off the screens that talk to a
+   * model is not a reason to stop noticing that a server changed shape.
+   */
+  screen_tool_list: z.boolean().default(true),
 });
 
 /** A section written but left empty, as happens when its contents are commented out, means the defaults. */

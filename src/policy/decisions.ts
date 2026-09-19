@@ -112,9 +112,16 @@ export interface Decision<Action> {
 }
 
 /** Whether a screen runs at all for this server. */
-export function shouldScreen(policy: Policy, server: string, side: 'calls' | 'results'): boolean {
+export function shouldScreen(
+  policy: Policy,
+  server: string,
+  side: 'calls' | 'results' | 'tool_list',
+): boolean {
   const settings = policyForServer(policy, server);
-  return side === 'calls' ? settings.screen_calls : settings.screen_results;
+  if (side === 'calls') {
+    return settings.screen_calls;
+  }
+  return side === 'results' ? settings.screen_results : settings.screen_tool_list;
 }
 
 /**

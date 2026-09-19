@@ -182,6 +182,7 @@ servers:
       deny_tools: [],
       screen_calls: true,
       screen_results: true,
+      screen_tool_list: true,
     });
   });
 

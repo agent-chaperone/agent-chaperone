@@ -46,9 +46,11 @@ import {
   readCallAnswers,
   readResultAnswers,
 } from '../screens/index.js';
+import { reviewToolList } from '../toollist/index.js';
 import {
   RESOURCE_READ,
   TOOL_CALL,
+  TOOLS_LIST,
   readResultText,
   readToolCall,
   toolError,
@@ -61,6 +63,7 @@ import {
   heldCall,
   partlyUnscreenedBanner,
   quarantined,
+  toolListChanged,
   withheldSecret,
 } from './notices.js';
 
@@ -197,6 +200,11 @@ export interface ScreeningOptions {
   readonly task?: string;
   /** Every judgment, decided or not applied. The audit log is the first consumer. */
   readonly onJudgment?: (judgment: Judgment) => void;
+  /**
+   * Something the person running this should read, rather than the agent. A
+   * server changing the tools it advertises is the first of these.
+   */
+  readonly onNotice?: (message: string) => void;
   /** Ids for held calls and withheld results, so a user can name one on the command line. */
   readonly newId?: () => string;
   /**
@@ -596,6 +604,28 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
    * for a firewall: it would let a bug here quietly undo what `strict` promises.
    * So a throw is handled the way an unreachable backend is, by the mode.
    */
+  /**
+   * Compare an advertised tool list against the one this server was first seen
+   * with, and report what moved.
+   *
+   * Never withholds and never waits: a client that cannot read the tool list
+   * cannot call anything, so a finding here is addressed to the person, and the
+   * response is relayed in the same turn it arrived.
+   */
+  const reviewTools = (envelope: Envelope): void => {
+    const result = (envelope.value as { result?: unknown } | undefined)?.result;
+    if (result === undefined) {
+      return;
+    }
+    const review = reviewToolList(server, result);
+    if (review.learned || review.changes.length === 0) {
+      return;
+    }
+    options.onNotice?.(
+      toolListChanged(server, review.changes, review.recordedAt, `agent-chaperone trust ${server}`),
+    );
+  };
+
   const onCallBug = (envelope: Envelope): GateVerdict => {
     const action = onCallFailure(policy.mode, {}, false);
     if (policy.mode === 'shadow' || action.kind === 'forward' || envelope.id === undefined) {
@@ -631,7 +661,24 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
       return screenCall(envelope).catch(() => onCallBug(envelope));
     }
 
-    if (envelope.kind !== 'response' || !shouldScreen(policy, server, 'results')) {
+    if (envelope.kind !== 'response') {
+      return FORWARD;
+    }
+    // Checked before the result screens, and on its own switch, because it sends
+    // nothing anywhere and withholds nothing: a server that turned off content
+    // screening has not thereby earned the right to change shape unnoticed.
+    if (request?.method === TOOLS_LIST) {
+      if (shouldScreen(policy, server, 'tool_list')) {
+        try {
+          reviewTools(envelope);
+        } catch {
+          // Recording what a server advertises is a convenience, not a screen.
+          // A state directory that cannot be written must not end the session.
+        }
+      }
+      return FORWARD;
+    }
+    if (!shouldScreen(policy, server, 'results')) {
       return FORWARD;
     }
     // An uncorrelated response is screened rather than waved through: the
