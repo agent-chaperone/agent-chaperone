@@ -12,6 +12,7 @@ import {
   isEntryPoint,
   parseArguments,
   parseCommand,
+  upstreamTargetOf,
   run,
   runFollow,
   runShow,
@@ -24,6 +25,12 @@ const judgments = <T extends { kind: string }>(
   records.filter((one): one is Extract<T, { kind: 'call' | 'result' }> => one.kind !== 'eviction');
 
 describe('parseArguments', () => {
+  // Stubs are not restored between tests unless something restores them, and a
+  // leaked variable would reach the describes below.
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('takes everything after the separator as the upstream command', () => {
     expect(parseArguments(['--', 'npx', '-y', 'some-server', '.'])).toEqual({
       command: 'npx',
@@ -60,6 +67,83 @@ describe('parseArguments', () => {
 
   it('keeps flags that belong to the upstream command', () => {
     expect(parseArguments(['--', 'server', '--port', '8080'])?.args).toEqual(['--port', '8080']);
+  });
+
+  it('collects repeated headers, splitting on the first colon only', () => {
+    expect(
+      parseArguments([
+        '--header',
+        'Authorization: Bearer abc:def',
+        '--header',
+        'X-Tenant: acme',
+        '--',
+        'https://example.com/mcp',
+      ])?.headers,
+    ).toEqual({ Authorization: 'Bearer abc:def', 'X-Tenant': 'acme' });
+  });
+
+  it('leaves headers absent when none were asked for', () => {
+    expect(parseArguments(['--', 'node', 'server.js'])).not.toHaveProperty('headers');
+  });
+
+  it('reads a header value from the environment, so a token stays out of the process list', () => {
+    vi.stubEnv('MCP_TOKEN', 'secret-value');
+    expect(
+      parseArguments(['--header-env', 'Authorization: MCP_TOKEN', '--', 'https://example.com/mcp'])
+        ?.headers,
+    ).toEqual({ Authorization: 'secret-value' });
+  });
+
+  it('refuses to start when the named environment variable is unset or empty', () => {
+    vi.stubEnv('MCP_TOKEN', '');
+    expect(
+      parseArguments(['--header-env', 'Authorization: MCP_TOKEN', '--', 'https://x.test/mcp']),
+    ).toBeUndefined();
+    expect(
+      parseArguments(['--header-env', 'Authorization: NEVER_SET_ANYWHERE', '--', 'https://x.test']),
+    ).toBeUndefined();
+  });
+
+  it('refuses a header that is not name and value', () => {
+    expect(parseArguments(['--header', 'no-colon', '--', 'https://x.test'])).toBeUndefined();
+    expect(parseArguments(['--header', ': novalue', '--', 'https://x.test'])).toBeUndefined();
+    expect(parseArguments(['--header', 'Name:', '--', 'https://x.test'])).toBeUndefined();
+  });
+});
+
+describe('upstreamTargetOf', () => {
+  const target = (argv: readonly string[]) => {
+    const parsed = parseArguments(argv);
+    if (parsed === undefined) {
+      throw new Error('expected these arguments to parse');
+    }
+    return upstreamTargetOf(parsed);
+  };
+
+  it('treats an http URL as a server that is already running', () => {
+    expect(target(['--', 'https://example.com/mcp'])).toEqual({
+      kind: 'url',
+      url: new URL('https://example.com/mcp'),
+    });
+  });
+
+  it('accepts plain http as well as https', () => {
+    expect(target(['--', 'http://localhost:3000/mcp']).kind).toBe('url');
+  });
+
+  it('treats anything without an http scheme as a command to run', () => {
+    expect(target(['--', 'npx', '-y', 'some-server']).kind).toBe('command');
+    expect(target(['--', 'node', 'server.js']).kind).toBe('command');
+  });
+
+  it('does not mistake a command whose name merely contains http for a URL', () => {
+    expect(target(['--', 'http-server']).kind).toBe('command');
+    expect(target(['--', './https-proxy']).kind).toBe('command');
+  });
+
+  it('does not treat a non-http scheme as a URL, because it is not one this can reach', () => {
+    expect(target(['--', 'file:///srv/server.js']).kind).toBe('command');
+    expect(target(['--', 'ws://example.com/mcp']).kind).toBe('command');
   });
 });
 

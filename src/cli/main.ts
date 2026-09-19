@@ -25,24 +25,32 @@ import { sanitizeMessage } from '../backends/index.js';
 import { createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
 import { PolicyError, parsePolicy, type Policy } from '../policy/index.js';
 import { createProxy } from '../proxy/proxy.js';
+import { connectHttpUpstream } from '../proxy/http.js';
 import { spawnUpstream, UpstreamStartError, type Upstream } from '../proxy/upstream.js';
 import { createScreeningGate, type Judgment } from '../screening/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
   agent-chaperone [options] -- <command> [args...]   Wrap and screen a server
+  agent-chaperone [options] -- <url>                 Wrap and screen a remote server
   agent-chaperone log [--follow]                     Read this session's decisions
   agent-chaperone show <id>                          Print what was held or withheld
   agent-chaperone approve <id>                       Let one held call through, once
   agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 
-Everything after -- is the upstream MCP server to run. Example:
+What follows -- is the upstream MCP server: a command to run, or the http URL of
+a Streamable HTTP server that is already running. Examples:
 
   agent-chaperone -- npx -y @modelcontextprotocol/server-filesystem .
+  agent-chaperone --header-env 'Authorization: MCP_TOKEN' -- https://example.com/mcp
 
 Options:
   --policy <path>       Policy file. Default: ~/.config/agent-chaperone/policy.yaml
-  --server <name>       Which section of the policy applies. Default: the command name
+  --server <name>       Which section of the policy applies. Default: the command
+                        name, or the host for a URL
+  --header <name:value> Send a request header to an HTTP upstream. Repeatable
+  --header-env <name:VAR>  The same, with the value read from the environment,
+                        so a token stays out of the process list. Repeatable
   --no-store-content    Record the judgments and not the arguments or results
 
 Screening needs TYPESAFE_API_KEY. Without it the deterministic rules still run,
@@ -73,6 +81,32 @@ export interface ParsedArguments {
   readonly policyPath?: string;
   readonly server?: string;
   readonly storeContent: boolean;
+  /** Request headers for an HTTP upstream. Absent when none were asked for. */
+  readonly headers?: Readonly<Record<string, string>>;
+}
+
+/**
+ * What to wrap: a program to run, or a server already running somewhere else.
+ *
+ * The distinction is made here rather than by a flag, because `--` is already
+ * the boundary between this program's arguments and the thing being wrapped,
+ * and an http URL is not a command anyone could have meant to execute.
+ */
+export type UpstreamTarget =
+  { readonly kind: 'command' } | { readonly kind: 'url'; readonly url: URL };
+
+export function upstreamTargetOf(parsed: ParsedArguments): UpstreamTarget {
+  if (!/^https?:\/\//i.test(parsed.command)) {
+    return { kind: 'command' };
+  }
+  try {
+    return { kind: 'url', url: new URL(parsed.command) };
+  } catch {
+    // Something that opens with a scheme but does not parse is a malformed URL,
+    // not a program. Treating it as a command would report "command not found"
+    // for a URL, which sends the reader looking in the wrong place.
+    return { kind: 'command' };
+  }
 }
 
 /** What the arguments asked for. */
@@ -117,6 +151,7 @@ export function parseArguments(argv: readonly string[]): ParsedArguments | undef
   let policyPath: string | undefined;
   let server: string | undefined;
   let storeContent = true;
+  const headers: Record<string, string> = {};
   for (let at = 0; at < ours.length; at += 1) {
     const flag = ours[at];
     const value = ours[at + 1];
@@ -125,6 +160,23 @@ export function parseArguments(argv: readonly string[]): ParsedArguments | undef
       at += 1;
     } else if (flag === '--server' && value !== undefined) {
       server = value;
+      at += 1;
+    } else if (flag === '--header' && value !== undefined) {
+      const header = splitHeader(value);
+      if (header === undefined) {
+        return undefined;
+      }
+      headers[header.name] = header.value;
+      at += 1;
+    } else if (flag === '--header-env' && value !== undefined) {
+      const header = splitHeader(value);
+      // An empty variable is treated as unset, because a header sent with no
+      // value is a confusing way to learn that a token was never exported.
+      const secret = header === undefined ? undefined : process.env[header.value];
+      if (header === undefined || secret === undefined || secret.length === 0) {
+        return undefined;
+      }
+      headers[header.name] = secret;
       at += 1;
     } else if (flag === '--no-store-content') {
       storeContent = false;
@@ -143,7 +195,22 @@ export function parseArguments(argv: readonly string[]): ParsedArguments | undef
     storeContent,
     ...(policyPath === undefined ? {} : { policyPath }),
     ...(server === undefined ? {} : { server }),
+    ...(Object.keys(headers).length === 0 ? {} : { headers }),
   };
+}
+
+/** `Name: value`, with the first colon as the separator and the value trimmed. */
+function splitHeader(text: string): { name: string; value: string } | undefined {
+  const colon = text.indexOf(':');
+  if (colon <= 0) {
+    return undefined;
+  }
+  const name = text.slice(0, colon).trim();
+  const value = text.slice(colon + 1).trim();
+  if (name.length === 0 || value.length === 0) {
+    return undefined;
+  }
+  return { name, value };
 }
 
 export function defaultPolicyPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -470,9 +537,13 @@ export async function run(
     return EXIT_USAGE;
   }
 
+  const target = upstreamTargetOf(parsed);
   let upstream: Upstream;
   try {
-    upstream = spawnUpstream(parsed.command, parsed.args);
+    upstream =
+      target.kind === 'url'
+        ? connectHttpUpstream(target.url, { headers: parsed.headers ?? {} })
+        : spawnUpstream(parsed.command, parsed.args);
   } catch (error) {
     io.errorOutput.write(`${messageFor(error)}\n`);
     return EXIT_CANNOT_START;
@@ -480,7 +551,10 @@ export async function run(
 
   // Said once the session is actually going to happen, so a command that could
   // not start reports that rather than something about configuration.
-  const server = parsed.server ?? basename(parsed.command);
+  // A remote server has no command name to be known by, so it answers to its
+  // host, which is what a person writing a policy section for it would write.
+  const server =
+    parsed.server ?? (target.kind === 'url' ? target.url.host : basename(parsed.command));
   const backend = hasTypeSafeKey() ? createTypeSafeBackend() : undefined;
   if (backend === undefined) {
     io.errorOutput.write(
