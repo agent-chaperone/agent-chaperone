@@ -125,7 +125,9 @@ The token names that one call rather than that tool, keyed by a digest of the se
 
 Each screen combines deterministic rules in code with a small battery of typed, calibrated judgments from [Jev](https://docs.typesafe.ai), TypeSafe's System One model.
 
-Screening the tool list itself is not in this version. A server's own descriptions of its tools reach the agent unscreened, so a description that carries an instruction, or one that changes after you decided to trust the server, is not caught today.
+Alongside them, the tool list a server advertises is compared against the one it first advertised. A rewritten description, a tool that appeared, and a tool that vanished are each reported. That comparison is a local digest: it sends nothing anywhere, and it never withholds the list, because a client that cannot read the tool list cannot call anything. `agent-chaperone trust <server>` accepts a change once you have looked at it.
+
+What that does not do is read the descriptions. A server whose tool list arrives already carrying an instruction is caught only once it changes, so the first list you ever receive from a server is still yours to read.
 
 ## Commands
 
@@ -134,6 +136,7 @@ agent-chaperone [options] -- <command> [args...]   Wrap and screen a server
 agent-chaperone log [--follow]                     Read this session's decisions
 agent-chaperone show <id>                          Print what was held or withheld
 agent-chaperone approve <id>                       Let one held call through, once
+agent-chaperone trust <server>                     Accept the tools a server now advertises
 agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 ```
 
