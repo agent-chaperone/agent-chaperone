@@ -185,7 +185,7 @@ Each screened call costs one model request, averaging 753 input tokens. A call t
 
 Three questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either. `description_steers` asks about a tool description rather than a call or a result, and the benchmark has no set of tool lists to ask it against, so nothing above measures any of the three.
 
-The hand-labeled set leans toward the built-in tool case on purpose: 44 of the 100 scored calls are shell commands, and 26 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
+The hand-labeled set leans toward the built-in tool case on purpose: 37 of the 100 scored calls are shell commands, and 21 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
 
 Methodology, per-threshold tables, the misses, and the raw recorded model responses are in [`bench/`](./bench/README.md).
 

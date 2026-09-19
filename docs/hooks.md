@@ -1,6 +1,6 @@
 # Screening a client's own tools
 
-A proxy sees MCP traffic. It does not see the shell, the file edits or the web fetches a client runs itself, and on the clients people actually use those are where most of the damage lives. The hand-labeled benchmark set leans that way on purpose: 44 of the 100 scored calls are shell commands, and 26 of the 51 dangerous ones are.
+A proxy sees MCP traffic. It does not see the shell, the file edits or the web fetches a client runs itself, and on the clients people actually use those are where most of the damage lives. The hand-labeled benchmark set leans that way on purpose: 37 of the 100 scored calls are shell commands, and 21 of the 51 dangerous ones are.
 
 Two commands cover that gap. They read the client's hook payload on stdin and answer on stdout, using the same policy file, the same deterministic rules, the same questions, the same decision functions and the same audit log as the proxy.
 
