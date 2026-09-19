@@ -115,13 +115,22 @@ export interface Decision<Action> {
 export function shouldScreen(
   policy: Policy,
   server: string,
-  side: 'calls' | 'results' | 'tool_list',
+  side: 'calls' | 'results' | 'tool_list' | 'tool_descriptions',
 ): boolean {
   const settings = policyForServer(policy, server);
-  if (side === 'calls') {
-    return settings.screen_calls;
+  switch (side) {
+    case 'calls':
+      return settings.screen_calls;
+    case 'results':
+      return settings.screen_results;
+    case 'tool_list':
+      return settings.screen_tool_list;
+    default:
+      // Reading a description means sending it, so this is the only side that
+      // needs the comparison to be on as well: there is nothing to attach a
+      // judgment to when the list is not being tracked.
+      return settings.screen_tool_descriptions && settings.screen_tool_list;
   }
-  return side === 'results' ? settings.screen_results : settings.screen_tool_list;
 }
 
 /**

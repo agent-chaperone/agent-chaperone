@@ -18,6 +18,9 @@ describe('defaults', () => {
         harmful_severity_level: 1.5,
         redact_secret: 0.7,
       },
+      tool_list: {
+        report_steers: 0.7,
+      },
       uncertain_severity_confidence: 0.5,
     });
   });
@@ -183,6 +186,7 @@ servers:
       screen_calls: true,
       screen_results: true,
       screen_tool_list: true,
+      screen_tool_descriptions: false,
     });
   });
 
@@ -236,12 +240,20 @@ describe('the example in the design document', () => {
     // Compare the raw document against the schema. Comparing the parsed result
     // would prove nothing, because parsing fills in every default.
     const written = parseYaml(designExample()) as {
-      thresholds: { call: object; result: object; uncertain_severity_confidence?: number };
+      thresholds: {
+        call: object;
+        result: object;
+        tool_list: object;
+        uncertain_severity_confidence?: number;
+      };
     };
     const defaults = defaultPolicy().thresholds;
     expect(Object.keys(written.thresholds.call).sort()).toEqual(Object.keys(defaults.call).sort());
     expect(Object.keys(written.thresholds.result).sort()).toEqual(
       Object.keys(defaults.result).sort(),
+    );
+    expect(Object.keys(written.thresholds.tool_list).sort()).toEqual(
+      Object.keys(defaults.tool_list).sort(),
     );
     expect(written.thresholds.uncertain_severity_confidence).toBe(
       defaults.uncertain_severity_confidence,

@@ -47,6 +47,7 @@ import {
   readResultAnswers,
 } from '../screens/index.js';
 import { reviewToolList } from '../toollist/index.js';
+import { buildToolListScreen, describableText, readToolListAnswers } from '../screens/index.js';
 import {
   RESOURCE_READ,
   TOOL_CALL,
@@ -63,6 +64,8 @@ import {
   heldCall,
   partlyUnscreenedBanner,
   quarantined,
+  toolDescriptionSteers,
+  toolDescriptionsUnscreened,
   toolListChanged,
   withheldSecret,
 } from './notices.js';
@@ -606,24 +609,61 @@ export function createScreeningGate(options: ScreeningOptions): Gate {
    */
   /**
    * Compare an advertised tool list against the one this server was first seen
-   * with, and report what moved.
+   * with, report what moved, and ask about the descriptions that are new or
+   * rewritten.
    *
-   * Never withholds and never waits: a client that cannot read the tool list
-   * cannot call anything, so a finding here is addressed to the person, and the
-   * response is relayed in the same turn it arrived.
+   * Never withholds and never delays the response: a client that cannot read the
+   * tool list cannot call anything, so the list is relayed in the same turn it
+   * arrived and any finding reaches the person afterwards. That is the whole
+   * reason this returns nothing and is not awaited.
    */
   const reviewTools = (envelope: Envelope): void => {
     const result = (envelope.value as { result?: unknown } | undefined)?.result;
     if (result === undefined) {
       return;
     }
-    const review = reviewToolList(server, result);
-    if (review.learned || review.changes.length === 0) {
-      return;
-    }
-    options.onNotice?.(
-      toolListChanged(server, review.changes, review.recordedAt, `agent-chaperone trust ${server}`),
-    );
+    // Named apart from the module's own `ask`, which it calls: the shadowing
+    // version of this compiled and recursed.
+    const askAbout =
+      backend === undefined || !shouldScreen(policy, server, 'tool_descriptions')
+        ? undefined
+        : async (name: string, description: unknown): Promise<number | undefined> => {
+            const text = describableText(description);
+            if (text === undefined) {
+              return undefined;
+            }
+            const screen = buildToolListScreen(name, text);
+            const asked = await ask(() => backend.ask(screen.state, screen.battery));
+            return asked.ok ? readToolListAnswers(asked.answers).description_steers : undefined;
+          };
+
+    void reviewToolList(server, result, {
+      threshold: policy.thresholds.tool_list.report_steers,
+      ...(askAbout === undefined ? {} : { ask: askAbout }),
+    })
+      .then((review) => {
+        if (!review.learned && review.changes.length > 0) {
+          options.onNotice?.(
+            toolListChanged(
+              server,
+              review.changes,
+              review.recordedAt,
+              `agent-chaperone trust ${server}`,
+            ),
+          );
+        }
+        if (review.steering.length > 0) {
+          options.onNotice?.(toolDescriptionSteers(server, review.steering));
+        }
+        if (review.unscreened.length > 0) {
+          options.onNotice?.(toolDescriptionsUnscreened(server, review.unscreened));
+        }
+      })
+      .catch(() => {
+        // Recording and reading what a server advertises is protection the list
+        // does not wait for. A state directory that cannot be written, or a
+        // backend that is down, must not end a session that is otherwise fine.
+      });
   };
 
   const onCallBug = (envelope: Envelope): GateVerdict => {

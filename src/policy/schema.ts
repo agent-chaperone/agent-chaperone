@@ -41,6 +41,17 @@ const resultThresholds = z
     path: ['annotate_instructs'],
   });
 
+/**
+ * Unmeasured, unlike the two above. No benchmark covers the tool-list question,
+ * so this default is a judgement and not a number read off a curve. It is set
+ * where a description has to be doing something fairly overt to reach it,
+ * because the cost of a false positive here is a warning about a server that is
+ * fine, and a warning nobody trusts is worse than no warning.
+ */
+const toolListThresholds = z.strictObject({
+  report_steers: probability.default(0.7),
+});
+
 const serverPolicy = z.strictObject({
   /**
    * MCP says a client must treat a server's own tool annotations as untrusted
@@ -59,6 +70,14 @@ const serverPolicy = z.strictObject({
    * model is not a reason to stop noticing that a server changed shape.
    */
   screen_tool_list: z.boolean().default(true),
+  /**
+   * Ask the model whether a tool's description is steering the agent rather than
+   * describing its tool. Off by default, and a switch of its own rather than
+   * part of `screen_tool_list`, because it is the one thing in the tool-list
+   * path that sends anything anywhere: turning it on sends every new or changed
+   * description to the backend. Nobody should acquire that by upgrading.
+   */
+  screen_tool_descriptions: z.boolean().default(false),
 });
 
 /** A section written but left empty, as happens when its contents are commented out, means the defaults. */
@@ -75,6 +94,7 @@ export const policySchema = z.strictObject({
       .strictObject({
         call: callThresholds.prefault({}),
         result: resultThresholds.prefault({}),
+        tool_list: toolListThresholds.prefault({}),
         /**
          * Below this confidence, a severity answer labels its action uncertain
          * rather than stating it flatly, so the text a user sees reads as the
@@ -103,6 +123,7 @@ export type Policy = z.infer<typeof policySchema>;
 export type ServerPolicy = z.infer<typeof serverPolicy>;
 export type CallThresholds = Policy['thresholds']['call'];
 export type ResultThresholds = Policy['thresholds']['result'];
+export type ToolListThresholds = Policy['thresholds']['tool_list'];
 
 export class PolicyError extends Error {
   constructor(

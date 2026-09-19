@@ -28,10 +28,36 @@ export interface ToolPrint {
   readonly digest: string;
 }
 
+/**
+ * The key a judgment is stored under.
+ *
+ * Name and digest together, not either alone. The digest covers the description
+ * and the schema but not the name, and the name is part of what the screen is
+ * shown, so the same description under two names is two questions. Keying by
+ * name alone is worse still: a server can advertise the same name twice.
+ */
+export function judgmentKey(name: string, digest: string): string {
+  return `${name}\u0000${digest}`;
+}
+
 export interface Baseline {
   readonly server: string;
+  /** When `tools` was learned. It does not move when a judgment is remembered. */
   readonly recordedAt: string;
+  /**
+   * What this server advertised the first time, and the only thing later lists
+   * are compared against. Rewriting it on every connection would make the record
+   * last-seen rather than first-seen, so a tampered description would be
+   * reported once and then become the expectation.
+   */
   readonly tools: readonly ToolPrint[];
+  /**
+   * What the screen concluded about a description, by `judgmentKey`. Separate
+   * from `tools` because it is a cache and not evidence: it can be written
+   * freely without touching what is being compared, and a description a server
+   * flips back and forth reuses its earlier answer rather than paying twice.
+   */
+  readonly judgments: Readonly<Record<string, number>>;
 }
 
 export type ToolChange =
@@ -160,45 +186,133 @@ export function toolsDirectory(env?: NodeJS.ProcessEnv): string {
   return join(stateDirectory(env), TOOLS_DIRECTORY);
 }
 
-export function readBaseline(server: string, env?: NodeJS.ProcessEnv): Baseline | undefined {
-  const path = join(toolsDirectory(env), baselineFileName(server));
-  let text: string;
-  try {
-    text = readFileSync(path, 'utf8');
-  } catch {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(text) as Baseline;
-    // A file that exists but says nothing usable is treated as no baseline, so a
-    // corrupted record re-learns rather than reporting every tool as changed.
-    return Array.isArray(parsed.tools) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
+/** A probability as it must be to be trusted from disk. */
+function validProbability(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 /**
- * Record a list as the one this server is expected to advertise.
+ * Read the record, keeping only what is well formed.
  *
- * Written through a temporary file and renamed, so a process that dies partway
- * leaves the previous baseline intact rather than a half-written one that would
- * read as every tool having changed.
+ * This file is on disk and can be edited, truncated or written by an older
+ * version. A field that is not what it claims to be is dropped rather than
+ * trusted: a judgment that is not a probability would otherwise retire that
+ * description from screening forever, which is the quietest possible failure.
  */
-export function writeBaseline(
+export function readBaseline(server: string, env?: NodeJS.ProcessEnv): Baseline | undefined {
+  const path = join(toolsDirectory(env), baselineFileName(server));
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return undefined;
+  }
+  if (parsed === null || typeof parsed !== 'object') {
+    return undefined;
+  }
+  const record = parsed as Partial<Baseline>;
+  if (!Array.isArray(record.tools)) {
+    return undefined;
+  }
+  const tools = record.tools.filter(
+    (tool): tool is ToolPrint =>
+      tool !== null &&
+      typeof tool === 'object' &&
+      typeof (tool as ToolPrint).name === 'string' &&
+      typeof (tool as ToolPrint).digest === 'string',
+  );
+  const judgments: Record<string, number> = {};
+  // A record written by 0.2.0 has no judgments at all. That is not corruption:
+  // it re-learns nothing and simply has no cached answers yet.
+  const written: unknown = record.judgments;
+  if (written !== null && typeof written === 'object') {
+    for (const [key, value] of Object.entries(written as Record<string, unknown>)) {
+      if (validProbability(value)) {
+        judgments[key] = value;
+      }
+    }
+  }
+  return {
+    server,
+    recordedAt: typeof record.recordedAt === 'string' ? record.recordedAt : '',
+    tools,
+    judgments,
+  };
+}
+
+function writeRecord(server: string, baseline: Baseline, env?: NodeJS.ProcessEnv): void {
+  const directory = toolsDirectory(env);
+  mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
+  const path = join(directory, baselineFileName(server));
+  // Through a temporary file and a rename, so a process that dies partway leaves
+  // the previous record intact rather than a truncated one that would read as
+  // every tool having changed. The name carries the pid so two processes writing
+  // at once cannot share a temporary file.
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(baseline, null, 2)}\n`, { mode: FILE_MODE });
+  renameSync(temporary, path);
+}
+
+/**
+ * Record what this server advertises as the list to expect from now on.
+ *
+ * Only for a server with no record, and for `trust`. Everything else remembers
+ * judgments instead, because the value of this file is that it holds what was
+ * advertised first.
+ */
+export function learnBaseline(
   server: string,
   tools: readonly ToolPrint[],
   now: () => Date = () => new Date(),
   env?: NodeJS.ProcessEnv,
 ): Baseline {
-  const directory = toolsDirectory(env);
-  mkdirSync(directory, { recursive: true, mode: DIRECTORY_MODE });
-  const baseline: Baseline = { server, recordedAt: now().toISOString(), tools };
-  const path = join(directory, baselineFileName(server));
-  const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(baseline, null, 2)}\n`, { mode: FILE_MODE });
-  renameSync(temporary, path);
+  const baseline: Baseline = {
+    server,
+    recordedAt: now().toISOString(),
+    tools,
+    judgments: {},
+  };
+  writeRecord(server, baseline, env);
   return baseline;
+}
+
+/**
+ * How many judgments one server's record may hold.
+ *
+ * A server that rewrites a description on every connection would otherwise grow
+ * this file without bound. Well past any real tool list, and the oldest go
+ * first, which for a server behaving normally are the ones it no longer
+ * advertises.
+ */
+export const MAX_JUDGMENTS = 512;
+
+/**
+ * Remember what the screen concluded, without touching what is being compared.
+ *
+ * `tools` and `recordedAt` are left exactly as they were. A judgment is a cache
+ * entry; writing one must never move the thing a later list is measured against,
+ * or the notice would say "first advertised" about yesterday.
+ */
+export function rememberJudgments(
+  server: string,
+  judgments: Readonly<Record<string, number>>,
+  keep: ReadonlySet<string>,
+  env?: NodeJS.ProcessEnv,
+): void {
+  const existing = readBaseline(server, env);
+  if (existing === undefined) {
+    return;
+  }
+  const merged: Record<string, number> = {};
+  for (const [key, value] of Object.entries({ ...existing.judgments, ...judgments })) {
+    // Keys for descriptions this server no longer advertises are dropped, so the
+    // file tracks the server rather than its whole history.
+    if (keep.has(key) && validProbability(value)) {
+      merged[key] = value;
+    }
+  }
+  const trimmed = Object.entries(merged).slice(-MAX_JUDGMENTS);
+  writeRecord(server, { ...existing, judgments: Object.fromEntries(trimmed) }, env);
 }
 
 /**

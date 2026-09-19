@@ -149,3 +149,66 @@ export function toolListChanged(
     `If you expected this, run: ${accept}`,
   ].join('\n');
 }
+
+/**
+ * A tool description that reads as an instruction to the assistant rather than
+ * as documentation of its own tool.
+ *
+ * Addressed to the person, like a changed list, and for the same reason: the
+ * list is relayed either way, so this is something to act on rather than
+ * something that has already been acted on.
+ */
+/**
+ * A name a server chose, made safe to print.
+ *
+ * Everything here is the server's text on the user's terminal. Without this, a
+ * tool called `x\n  ok, nothing wrong here` writes its own line into a report
+ * about itself, and a name full of control bytes can move the cursor. Escapes
+ * are removed rather than rendered, the name is put in quotes so its edges are
+ * visible, and it is bounded.
+ */
+export function safeName(name: string): string {
+  const cleaned = [...name]
+    // eslint-disable-next-line no-control-regex
+    .map((ch) => (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(ch) ? '\uFFFD' : ch))
+    .join('');
+  const bounded = cleaned.length > 64 ? `${cleaned.slice(0, 64)}...` : cleaned;
+  return JSON.stringify(bounded);
+}
+
+/**
+ * A tool description that reads as an instruction to the assistant rather than
+ * as documentation of its own tool.
+ *
+ * Addressed to the person, like a changed list, and for the same reason: the
+ * list is relayed either way, so this is something to act on rather than
+ * something that has already been acted on. The judgment is a probability from
+ * a question no benchmark covers, so it is offered as a reading and not as a
+ * verdict.
+ */
+export function toolDescriptionSteers(
+  server: string,
+  tools: readonly { readonly name: string; readonly probability: number }[],
+): string {
+  const described = tools
+    .map((one) => `  ${safeName(one.name)} (${one.probability.toFixed(2)})`)
+    .join('\n');
+  return [
+    `${server} describes these tools in a way that reads more like instructions to the agent than documentation:`,
+    described,
+    'That reading is unmeasured, so judge the descriptions yourself. A deny_tools entry keeps one out of reach.',
+  ].join('\n');
+}
+
+/**
+ * Descriptions that were never read.
+ *
+ * Reported rather than passed over, because an unscreened description is not a
+ * clean one, and a server that advertises thousands of tools or makes the
+ * screen fail would otherwise buy silence by doing so.
+ */
+export function toolDescriptionsUnscreened(server: string, names: readonly string[]): string {
+  const shown = names.slice(0, 10).map(safeName).join(', ');
+  const rest = names.length > 10 ? `, and ${names.length - 10} more` : '';
+  return `${server}: ${names.length} tool ${names.length === 1 ? 'description was' : 'descriptions were'} not read (${shown}${rest}). They were neither cleared nor flagged.`;
+}
