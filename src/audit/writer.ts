@@ -15,7 +15,7 @@ import { appendFileSync, mkdirSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Judgment } from '../screening/index.js';
 import { sessionFileName, sessionsDirectory } from './paths.js';
-import { toEvictionRecord, toRecord, type AuditRecord } from './record.js';
+import { toEvictionRecord, toRecord, toToolListRecord, type AuditRecord } from './record.js';
 
 /** Owner read and write, and nothing for anyone else. */
 export const FILE_MODE = 0o600;
@@ -104,7 +104,11 @@ export function createAuditLog(options: AuditLogOptions = {}): AuditLog {
       return written;
     },
     write(judgment: Judgment): void {
-      append(toRecord(judgment, { now, storeContent }));
+      append(
+        judgment.side === 'tool-list'
+          ? toToolListRecord(judgment, { now, storeContent })
+          : toRecord(judgment, { now, storeContent }),
+      );
     },
     writeEviction(input): void {
       append(toEvictionRecord(input, { now, storeContent }));

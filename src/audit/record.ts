@@ -14,7 +14,7 @@
 
 import { sanitizeMessage } from '../backends/index.js';
 import { MAX_MATCHES } from '../rules/index.js';
-import type { Judgment } from '../screening/index.js';
+import type { Judgment, ToolListJudgment } from '../screening/index.js';
 
 /**
  * The published price per million input tokens for the model the benchmark ran
@@ -81,7 +81,47 @@ export interface EvictionRecord {
   readonly reason: 'count' | 'bytes';
 }
 
-export type AuditRecord = JudgmentRecord | EvictionRecord;
+/**
+ * What the tool-list screen decided.
+ *
+ * Its own shape rather than a judgment, because a judgment is built around a
+ * call or a result: there is no tool call here, no arguments, and no action,
+ * since the list is always relayed. What there is instead is a comparison
+ * against what this server advertised first, and sometimes a reading of the
+ * descriptions.
+ */
+export interface ToolListRecord {
+  readonly ts: string;
+  readonly id: string;
+  readonly kind: 'tool-list';
+  readonly server: string;
+  readonly mode: string;
+  /** What happened, as one word, which is what `log` prints. */
+  readonly decision: 'learned' | 'unchanged' | 'changed' | 'steering' | 'unchecked';
+  /** How many tools the assembled listing carried. */
+  readonly tools: number;
+  readonly changes?: readonly { readonly kind: string; readonly name: string }[];
+  readonly steering?: readonly { readonly name: string; readonly probability: number }[];
+  /**
+   * Descriptions nothing read: past the cap, too long to judge, or a screen that
+   * failed. Not the same as read and found clean, which is why they are named.
+   */
+  readonly unscreened?: readonly string[];
+  /** False when no description was read, so a quiet record is not an all-clear. */
+  readonly screened: boolean;
+  readonly asked?: number;
+  readonly threshold?: number;
+  /** When the list being compared against was first recorded. */
+  readonly recorded_at?: string;
+  readonly model?: string;
+  readonly input_tokens?: number;
+  readonly cost_usd?: number;
+  readonly requests?: number;
+  /** The descriptions that were reported, so `show` can print what was judged. */
+  readonly content?: { readonly descriptions?: Readonly<Record<string, string>> };
+}
+
+export type AuditRecord = JudgmentRecord | EvictionRecord | ToolListRecord;
 
 export function toEvictionRecord(
   input: {
@@ -137,18 +177,20 @@ const CREDENTIAL_FOUND =
  */
 const TOO_MANY = '[content not stored: too many secret shapes to redact them all]';
 
-function tooManyToRedact(judgment: Judgment): boolean {
+type ContentJudgment = Exclude<Judgment, { side: 'tool-list' }>;
+
+function tooManyToRedact(judgment: ContentJudgment): boolean {
   return judgment.secrets.length >= MAX_MATCHES;
 }
 
-function keep(judgment: Judgment, content: unknown): unknown {
+function keep(judgment: ContentJudgment, content: unknown): unknown {
   if (tooManyToRedact(judgment)) {
     return TOO_MANY;
   }
   return foundCredential(judgment) ? CREDENTIAL_FOUND : content;
 }
 
-function foundCredential(judgment: Judgment): boolean {
+function foundCredential(judgment: ContentJudgment): boolean {
   // The flag is read from the answers at the point they were read. The action is
   // checked too, so a caller that forgets the flag still cannot store a
   // credential the action itself names.
@@ -160,8 +202,87 @@ function foundCredential(judgment: Judgment): boolean {
     : judgment.intended.kind === 'hold' && judgment.intended.reason === 'secret-in-arguments';
 }
 
+/**
+ * What `log` prints for a listing, as one word.
+ *
+ * A description that reads as steering outranks a changed list, because it is
+ * the stronger statement about the same server. Nothing read at all outranks
+ * both: a quiet line about a listing nobody checked would be the misleading one.
+ */
+function toolListDecision(judgment: ToolListJudgment): ToolListRecord['decision'] {
+  if (judgment.steering.length > 0) {
+    return 'steering';
+  }
+  if (judgment.unscreened.length > 0) {
+    return 'unchecked';
+  }
+  if (judgment.learned) {
+    return 'learned';
+  }
+  return judgment.changes.length > 0 ? 'changed' : 'unchanged';
+}
+
+/** One tool-list judgment, as the line that goes on disk. */
+export function toToolListRecord(
+  judgment: ToolListJudgment,
+  options: RecordOptions,
+): ToolListRecord {
+  const usage = judgment.usage;
+  const reported = Object.fromEntries(
+    judgment.steering.map((one) => [
+      sanitizeMessage(one.name),
+      sanitizeMessage(judgment.descriptions[one.name] ?? ''),
+    ]),
+  );
+  return {
+    ts: options.now().toISOString(),
+    id: judgment.id,
+    kind: 'tool-list',
+    // Every one of these came off the wire and reaches a terminal through here.
+    server: sanitizeMessage(judgment.server),
+    mode: judgment.mode,
+    decision: toolListDecision(judgment),
+    tools: judgment.tools,
+    screened: judgment.screened,
+    asked: judgment.asked,
+    threshold: judgment.threshold,
+    ...(judgment.changes.length === 0
+      ? {}
+      : {
+          changes: judgment.changes.map((one) => ({
+            kind: one.kind,
+            name: sanitizeMessage(one.name),
+          })),
+        }),
+    ...(judgment.steering.length === 0
+      ? {}
+      : {
+          steering: judgment.steering.map((one) => ({
+            name: sanitizeMessage(one.name),
+            probability: one.probability,
+          })),
+        }),
+    ...(judgment.unscreened.length === 0
+      ? {}
+      : { unscreened: judgment.unscreened.map((one) => sanitizeMessage(one)) }),
+    ...(judgment.recordedAt === undefined ? {} : { recorded_at: judgment.recordedAt }),
+    ...(usage === undefined
+      ? {}
+      : {
+          model: sanitizeMessage(usage.model),
+          input_tokens: usage.inputTokens,
+          cost_usd: costOf(usage.inputTokens),
+          requests: usage.requests,
+        }),
+    // A description is a server's text, so it follows the same rule as a result.
+    ...(options.storeContent && Object.keys(reported).length > 0
+      ? { content: { descriptions: reported } }
+      : {}),
+  };
+}
+
 /** One judgment, as the line that goes on disk. */
-export function toRecord(judgment: Judgment, options: RecordOptions): JudgmentRecord {
+export function toRecord(judgment: ContentJudgment, options: RecordOptions): JudgmentRecord {
   const usage = judgment.usage;
   const common = {
     ts: options.now().toISOString(),
@@ -260,6 +381,23 @@ export function formatRecord(record: AuditRecord): string {
   if (record.kind === 'eviction') {
     const bound = record.reason === 'count' ? 'too many pending' : 'too many bytes pending';
     return `${time} evict  DROPPED  ${record.method} id=${record.id} (${bound}, so the reply to it cannot be paired)`;
+  }
+  if (record.kind === 'tool-list') {
+    const counted = `${record.tools} ${record.tools === 1 ? 'tool' : 'tools'}`;
+    const detail =
+      record.decision === 'steering'
+        ? ` ${(record.steering ?? []).map((one) => `${one.name} ${one.probability.toFixed(2)}`).join(', ')}`
+        : record.decision === 'changed'
+          ? ` ${(record.changes ?? []).map((one) => `${one.kind} ${one.name}`).join(', ')}`
+          : record.decision === 'unchecked'
+            ? ` ${(record.unscreened ?? []).length} unread`
+            : '';
+    const cost = record.cost_usd === undefined ? '' : ` $${record.cost_usd.toFixed(6)}`;
+    // A listing nobody read is the case a reader most needs to see, for the same
+    // reason a call nobody screened is: quiet does not mean clear.
+    const unread = record.screened ? '' : ' [no description read]';
+    const label = record.decision.toUpperCase().padEnd(9);
+    return `${time} ${record.id}  ${label} tools/list ${counted}${detail}${unread}${cost}`;
   }
   const applied = record.applied as { kind?: string } | undefined;
   const intended = record.intended as { kind?: string } | undefined;
