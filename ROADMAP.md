@@ -25,7 +25,7 @@ Tooling, CI, templates, community docs, the design document, the architecture de
 
 ## M1: v0.1.0, a working proxy
 
-**Status:** not started
+**Status:** built
 
 The smallest version that protects a real session.
 

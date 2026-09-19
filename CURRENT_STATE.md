@@ -84,6 +84,10 @@ Every replacement now travels with a note carried in its own field. A replacemen
 
 The worked configuration is in [`docs/hooks.md`](./docs/hooks.md).
 
+### Release (#12)
+
+`package.json` carries the publishable metadata and no longer says `private`, the README is written for somebody installing the thing rather than reading about it, and the release workflow publishes and nothing else. It used to open a version pull request of its own, which is not how anything here gets written.
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
@@ -94,7 +98,7 @@ Nothing in flight. Everything M1 needs is built: MCP traffic and a client's own 
 
 ## What's Next
 
-1. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+The package is publishable and the version is 0.1.0. Publishing is a separate, deliberate act: the release workflow runs only when a person starts it and asks for the version to be typed back before it does anything, so merging does not publish.
 
 ## Known Blockers / Decisions Pending
 
