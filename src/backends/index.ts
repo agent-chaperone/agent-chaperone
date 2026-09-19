@@ -45,3 +45,20 @@ export type {
 export type { Validation } from './validate.js';
 export { MAX_ENTRIES as MAX_CACHED_JUDGMENTS, cachingBackend } from './cache.js';
 export type { CacheStats, CachingOptions } from './cache.js';
+export {
+  DEFAULT_GATEWAY_MODEL,
+  DEFAULT_OPENROUTER_MODEL,
+  GATEWAY_KEY_ENV,
+  GATEWAY_URL,
+  MODEL_ENV,
+  OPENROUTER_KEY_ENV,
+  OPENROUTER_URL,
+  createGatewayBackend,
+  createOpenAiBackend,
+  createOpenRouterBackend,
+  hasGatewayKey,
+  hasOpenRouterKey,
+  promptFor,
+  schemaFor,
+} from './openai.js';
+export type { OpenAiBackendOptions } from './openai.js';
