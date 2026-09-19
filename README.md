@@ -127,7 +127,9 @@ Each screen combines deterministic rules in code with a small battery of typed, 
 
 Alongside them, the tool list a server advertises is compared against the one it first advertised. A rewritten description, a tool that appeared, and a tool that vanished are each reported. That comparison is a local digest: it sends nothing anywhere, and it never withholds the list, because a client that cannot read the tool list cannot call anything. `agent-chaperone trust <server>` accepts a change once you have looked at it.
 
-What that does not do is read the descriptions. A server whose tool list arrives already carrying an instruction is caught only once it changes, so the first list you ever receive from a server is still yours to read.
+That comparison notices a description changed and never reads it. Reading them is a separate switch, `screen_tool_descriptions`, which is **off by default** and stays off when you upgrade, because turning it on sends every new or changed description to the model backend. With it on, a description that reads more like an instruction to the agent than like documentation is reported, and one too long to judge, or that the screen could not reach, is reported as unread rather than passed over.
+
+That question is not covered by the numbers below. Nothing in the benchmark sends it, so its threshold is a judgement rather than a figure read off a curve, and the notice says so.
 
 ## Commands
 
@@ -161,7 +163,7 @@ The screening questions were evaluated against public prompt-injection benchmark
 
 Each screened call costs one model request, averaging 753 input tokens. A call the allow or deny list settles never reaches the model.
 
-Two questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either, so nothing above measures them.
+Three questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either. `description_steers` asks about a tool description rather than a call or a result, and the benchmark has no set of tool lists to ask it against, so nothing above measures any of the three.
 
 The hand-labeled set leans toward the built-in tool case on purpose: 44 of the 100 scored calls are shell commands, and 26 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
 

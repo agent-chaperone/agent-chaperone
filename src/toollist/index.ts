@@ -7,10 +7,19 @@ export {
   printTools,
   readBaseline,
   toolsDirectory,
-  writeBaseline,
+  learnBaseline,
+  rememberJudgments,
+  judgmentKey,
+  MAX_JUDGMENTS,
   type AdvertisedTool,
   type Baseline,
   type ToolChange,
   type ToolPrint,
 } from './baseline.js';
-export { reviewToolList, type ToolListReview } from './review.js';
+export {
+  reviewToolList,
+  type AskAboutDescription,
+  type ReviewOptions,
+  type SteeringTool,
+  type ToolListReview,
+} from './review.js';
