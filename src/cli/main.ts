@@ -22,7 +22,16 @@ import {
 import { grantApproval, readHold, sweepApprovals } from '../approvals/index.js';
 import { eventOf, postResponse, preResponse, runPostHook, runPreHook } from '../hooks/index.js';
 import { sanitizeMessage } from '../backends/index.js';
-import { cachingBackend, createTypeSafeBackend, hasTypeSafeKey } from '../backends/index.js';
+import {
+  cachingBackend,
+  createGatewayBackend,
+  createOpenRouterBackend,
+  createTypeSafeBackend,
+  hasGatewayKey,
+  hasOpenRouterKey,
+  hasTypeSafeKey,
+  type Backend,
+} from '../backends/index.js';
 import { PolicyError, parsePolicy, type Policy } from '../policy/index.js';
 import { createProxy } from '../proxy/proxy.js';
 import { connectHttpUpstream } from '../proxy/http.js';
@@ -477,6 +486,28 @@ export function runWrap(
  * is actually asking, which is what enforcing would have stopped and whether any
  * of it was work the user wanted done.
  */
+/**
+ * Which backend to use.
+ *
+ * TypeSafe first, because its answers are the ones every shipped threshold was
+ * measured against. The others exist so this runs where that one cannot, and
+ * they are marked so the caller can say what that costs.
+ */
+export function chooseBackend(
+  env: NodeJS.ProcessEnv = process.env,
+): { backend: Backend; uncalibrated: boolean } | undefined {
+  if (hasTypeSafeKey(env)) {
+    return { backend: createTypeSafeBackend(), uncalibrated: false };
+  }
+  if (hasOpenRouterKey(env)) {
+    return { backend: createOpenRouterBackend(env), uncalibrated: true };
+  }
+  if (hasGatewayKey(env)) {
+    return { backend: createGatewayBackend(env), uncalibrated: true };
+  }
+  return undefined;
+}
+
 export function runReport(io: RunStreams): number {
   io.output.write(`${formatSummary(summarise(recentRecords(0)))}\n`);
   return 0;
@@ -659,7 +690,10 @@ export async function runHook(
     return 0;
   }
 
-  const backend = hasTypeSafeKey(env) ? createTypeSafeBackend() : undefined;
+  // The same choice the proxy makes, so a hook and a proxy in one session are
+  // never screened by different models without anyone saying so.
+  const chosen = chooseBackend(env);
+  const backend = chosen === undefined ? undefined : cachingBackend(chosen.backend);
   const audit = createAuditLog({
     // The proxy takes `--no-store-content` as a flag. A hook is launched by the
     // client with a fixed command line, so the same choice arrives the way its
@@ -772,10 +806,17 @@ export async function run(
   // Wrapped so a question the session has already answered is not asked again.
   // An agent rereading one file is the same state and the same battery every
   // time, which is the same request.
-  const backend = hasTypeSafeKey() ? cachingBackend(createTypeSafeBackend()) : undefined;
-  if (backend === undefined) {
+  const chosen = chooseBackend();
+  const backend = chosen === undefined ? undefined : cachingBackend(chosen.backend);
+  if (chosen === undefined) {
     io.errorOutput.write(
-      'agent-chaperone: TYPESAFE_API_KEY is not set, so only the deterministic rules will run.\n',
+      'agent-chaperone: no model backend is configured, so only the deterministic rules will run. Set TYPESAFE_API_KEY for the calibrated one, or OPENROUTER_API_KEY or AI_GATEWAY_API_KEY to screen through a general model.\n',
+    );
+  } else if (chosen.uncalibrated) {
+    // Said every time, not once. The thresholds that ship were chosen against
+    // measured probabilities, and this backend does not return those.
+    io.errorOutput.write(
+      `agent-chaperone: screening through ${chosen.backend.name}, whose probabilities are not calibrated. The shipped thresholds were measured against a different model, so read your own log before enforcing anything.\n`,
     );
   }
 

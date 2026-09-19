@@ -396,8 +396,11 @@ describe('run', () => {
       await exit;
 
       const written = streams.stderr();
-      expect(written).toContain('TYPESAFE_API_KEY is not set');
-      expect(written.match(/TYPESAFE_API_KEY is not set/g)).toHaveLength(1);
+      expect(written).toContain('no model backend is configured');
+      // Once, not once per call. It also names the keys that would supply one,
+      // because a line that only states the problem is not worth printing.
+      expect(written.match(/no model backend is configured/g)).toHaveLength(1);
+      expect(written).toContain('TYPESAFE_API_KEY');
     });
 
     it('records a judgment for every call it screened', async () => {

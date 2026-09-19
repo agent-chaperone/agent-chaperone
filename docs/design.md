@@ -309,6 +309,8 @@ The file and its directory are created for the owner alone. A log that cannot be
 
 Tool arguments and results go to the selected backend. The README says so on its first screen. Controls:
 
+A backend reached through OpenRouter or the Vercel AI Gateway answers the same battery and returns the same shapes, and its numbers mean something different. Calibration is a property of a model that was trained and measured for it, not of the interface, so every threshold documented here applies to Jev and to nothing else. The proxy says which backend it is using and says plainly when that backend is uncalibrated, every session rather than once, because the cost of forgetting is a threshold that looks tuned and is not.
+
 - Per-server `screen_results: false` and `screen_calls: false`. `screen_tool_list: false` is separate, because comparing an advertised tool list against the one recorded for that server is a local digest and sends nothing anywhere.
 - Regex redaction of secret-shaped strings before anything is sent.
 - Size caps: results above a configurable byte limit are screened by their first and last chunks only, and the log records that the middle was skipped.

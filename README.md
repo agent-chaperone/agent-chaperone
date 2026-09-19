@@ -27,6 +27,8 @@ A question the session has already answered is not asked again. An agent rereadi
 
 Screening needs `TYPESAFE_API_KEY` in the environment. Without it the deterministic rules still run, which is the allow and deny lists and the secret patterns, and every judgment records that no model was asked.
 
+`OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` will screen through a general model instead, with `AGENT_CHAPERONE_MODEL` choosing which. **Those probabilities are not calibrated.** Every threshold that ships here was chosen against measured numbers from Jev, and a general model returns a number that looks the same and means something else, so the results below say nothing about it. It exists so this runs where Jev cannot. Read your own log in shadow mode and tune from it before letting one of those decide anything.
+
 ## Wrapping an MCP server
 
 One change to the client's MCP configuration. Everything after `--` is the server that would have run anyway:
