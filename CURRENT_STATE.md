@@ -4,11 +4,11 @@
 
 ## Current Version
 
-`0.0.0`, unreleased. The package is `private` and nothing is on npm.
+`0.2.0`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
 
 ## Active Milestone
 
-**M0: Repository and Design Foundation.** See [`ROADMAP.md`](./ROADMAP.md).
+**M3: v0.3.0, every client.** See [`ROADMAP.md`](./ROADMAP.md).
 
 ## What's Done
 
@@ -18,7 +18,7 @@ Single TypeScript package (ESM, strict, `NodeNext`), ESLint flat config with `ty
 
 ### CI and release
 
-`ci.yml` runs lint, format check, typecheck, build, and test on pushes and pull requests to `main`. `release.yml` runs Changesets on `main` and creates a tag and GitHub release when a version is published. Publishing is inert while the package is `private`.
+`ci.yml` runs lint, format check, typecheck, build, and test on pushes and pull requests to `main`. `release.yml` publishes and creates the tag and GitHub release. It runs only when a person starts it, and asks for the version to be typed back before it does anything, so merging never publishes.
 
 ### Templates
 
