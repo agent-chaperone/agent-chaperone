@@ -4,11 +4,11 @@
 
 ## Current Version
 
-`0.2.0`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
+`0.3.0`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
 
 ## Active Milestone
 
-**M3: v0.3.0, every client.** See [`ROADMAP.md`](./ROADMAP.md).
+**M4: v0.4.0, receipts and tuning.** See [`ROADMAP.md`](./ROADMAP.md).
 
 ## What's Done
 

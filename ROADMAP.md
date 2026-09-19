@@ -61,15 +61,28 @@ Reaching servers that are not a local process, and noticing when a server stops 
 
 ## M3: v0.3.0, every client
 
-**Status:** not started
+**Status:** released
 
-- Elicitation-based confirmation when the client supports it
+Reaching a model wherever one is, reading what a server says about itself, and making a shadow-mode log answer the question it was collected for.
+
+- Tool descriptions screened as untrusted text, behind a switch of their own
+- A paginated tool list assembled before it is compared
+- Tool-list decisions in the audit log, readable with `log` and `show`
+- `task`, so the off-task question has something to be asked against
+- A judgment cache, so a question the session already answered is not asked again
+- `wrap`, which puts a client's MCP servers behind the screen and takes them back out
+- `report` and `replay`, which say what enforcing would have stopped and what another policy would do
+- OpenRouter and Vercel AI Gateway backends, with their answers marked uncalibrated
+
+**Exit criteria:** a shadow-mode session can be summarised, replayed against a candidate policy, and the difference read without opening the log by hand.
 
 ---
 
 ## M4: v0.4.0, receipts and tuning
 
 **Status:** not started
+
+- Elicitation-based confirmation when the client supports it, which needs the relay to read a source while an earlier message from it is still being decided
 
 - Benchmark suite runnable from the repo with committed raw responses and reliability diagrams
 - Post-result screen that includes the agent's tool list in the state, measured against the same benchmarks
