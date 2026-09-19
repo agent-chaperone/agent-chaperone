@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { safeName, toolDescriptionSteers, toolDescriptionsUnscreened } from './notices.js';
+import {
+  safeName,
+  toolDescriptionSteers,
+  toolDescriptionsUnscreened,
+  toolListChanged,
+} from './notices.js';
 
 const ESC = String.fromCharCode(0x1b);
 const CR = String.fromCharCode(0x0d);
@@ -41,6 +46,19 @@ describe('a name a server chose, printed to a terminal', () => {
 
     expect(notice).toContain('neither cleared nor flagged');
     expect(notice).toContain('2 tool descriptions were not read');
+  });
+
+  it('escapes names in the changed-list report as well', () => {
+    const forged = 'read_file\n  added   everything_else';
+    const notice = toolListChanged(
+      'files',
+      [{ kind: 'changed', name: forged }],
+      '2026-01-01T00:00:00.000Z',
+      'agent-chaperone trust files',
+    );
+    const reported = notice.split('\n').filter((line) => line.startsWith('  '));
+
+    expect(reported).toHaveLength(1);
   });
 
   it('does not list every name when a server advertises thousands', () => {

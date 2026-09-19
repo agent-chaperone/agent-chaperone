@@ -15,13 +15,13 @@
 
 import { describableText } from '../screens/toollist.js';
 import {
-  advertisedTools,
   compareTools,
   judgmentKey,
   learnBaseline,
   printTools,
   readBaseline,
   rememberJudgments,
+  type AdvertisedTool,
   type ToolChange,
   type ToolPrint,
 } from './baseline.js';
@@ -46,8 +46,6 @@ export interface ToolListReview {
    * failed. Reported, because an unscreened description is not a clean one.
    */
   readonly unscreened: readonly string[];
-  /** The list arrived in pages, so it is a slice and removals cannot be read from it. */
-  readonly partial: boolean;
   /** When the list being compared against was recorded. */
   readonly recordedAt?: string;
 }
@@ -94,19 +92,19 @@ async function inBatches<T, R>(
   return out;
 }
 
+/**
+ * Review a complete tool list.
+ *
+ * `advertised` is a whole listing, already assembled from its pages. Handing
+ * this one page would compare a server against a slice of itself; see
+ * `ToolListAssembly`.
+ */
 export async function reviewToolList(
   server: string,
-  result: unknown,
+  advertised: readonly AdvertisedTool[],
   options: ReviewOptions = {},
 ): Promise<ToolListReview> {
-  const advertised = advertisedTools(result);
   const tools = printTools(advertised);
-  // A paginated listing is a slice of the tool list. What is absent from it is
-  // not absent from the server, so removals cannot be read from it.
-  const partial =
-    result !== null &&
-    typeof result === 'object' &&
-    (result as { nextCursor?: unknown }).nextCursor !== undefined;
 
   const baseline = readBaseline(server, options.env);
   const learned = baseline === undefined;
@@ -114,12 +112,7 @@ export async function reviewToolList(
     learnBaseline(server, tools, options.now, options.env);
   }
 
-  const changes =
-    baseline === undefined
-      ? []
-      : compareTools(baseline.tools, tools).filter(
-          (change) => !(partial && change.kind === 'removed'),
-        );
+  const changes = baseline === undefined ? [] : compareTools(baseline.tools, tools);
 
   // Keyed by name and digest together, so two entries advertised under the same
   // name are two separate questions and neither inherits the other's answer.
@@ -186,7 +179,6 @@ export async function reviewToolList(
     steering,
     asked: toAsk.length,
     unscreened: [...overCap, ...failed],
-    partial,
     ...(baseline === undefined ? {} : { recordedAt: baseline.recordedAt }),
   };
 }
