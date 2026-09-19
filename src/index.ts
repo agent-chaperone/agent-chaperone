@@ -292,3 +292,13 @@ export {
   writeTask,
   type Task,
 } from './task/index.js';
+
+export {
+  formatReplay,
+  formatSummary,
+  replay,
+  summarise,
+  type Change,
+  type Replay,
+  type Summary,
+} from './report/index.js';

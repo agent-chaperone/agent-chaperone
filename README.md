@@ -143,6 +143,8 @@ agent-chaperone log [--follow]                     Read this session's decisions
 agent-chaperone show <id>                          Print what was held or withheld
 agent-chaperone approve <id>                       Let one held call through, once
 agent-chaperone trust <server>                     Accept the tools a server now advertises
+agent-chaperone report                             What the log adds up to, and what enforcing would stop
+agent-chaperone replay [--policy <path>]           Decide again with another policy, over what was judged
 agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 ```
 

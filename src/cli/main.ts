@@ -30,6 +30,7 @@ import { spawnUpstream, UpstreamStartError, type Upstream } from '../proxy/upstr
 import { createScreeningGate, type Judgment } from '../screening/index.js';
 import { forgetBaseline } from '../toollist/index.js';
 import { clearTask, readTask, writeTask } from '../task/index.js';
+import { formatReplay, formatSummary, replay, summarise } from '../report/index.js';
 
 const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
 
@@ -40,6 +41,8 @@ const USAGE = `agent-chaperone: screen an MCP server's tool traffic.
   agent-chaperone approve <id>                       Let one held call through, once
   agent-chaperone trust <server>                     Accept the tools a server now advertises
   agent-chaperone task [text|--clear]                Say what the agent is working on, or read it back
+  agent-chaperone report                             What the log adds up to, and what enforcing would stop
+  agent-chaperone replay [--policy <path>]           Decide again with another policy, over what was judged
   agent-chaperone hook pre|post                      Screen a client's own tools, from a hook
 
 What follows -- is the upstream MCP server: a command to run, or the http URL of
@@ -121,6 +124,8 @@ export type Command =
   | { readonly kind: 'approve'; readonly id: string }
   | { readonly kind: 'trust'; readonly server: string }
   | { readonly kind: 'task'; readonly text?: string; readonly clear: boolean }
+  | { readonly kind: 'report' }
+  | { readonly kind: 'replay'; readonly policyPath?: string }
   | { readonly kind: 'hook'; readonly side: 'pre' | 'post' }
   | { readonly kind: 'usage' };
 
@@ -139,6 +144,14 @@ export function parseCommand(argv: readonly string[]): Command {
   if (first === 'hook') {
     const side = rest.find((one) => !one.startsWith('-'));
     return side === 'pre' || side === 'post' ? { kind: 'hook', side } : { kind: 'usage' };
+  }
+  if (first === 'report') {
+    return { kind: 'report' };
+  }
+  if (first === 'replay') {
+    const at = rest.indexOf('--policy');
+    const value = at === -1 ? undefined : rest[at + 1];
+    return { kind: 'replay', ...(value === undefined ? {} : { policyPath: value }) };
   }
   if (first === 'task') {
     const clear = rest.includes('--clear');
@@ -381,6 +394,39 @@ export function runShow(id: string, io: RunStreams, env: NodeJS.ProcessEnv = pro
  * one project. With no argument it prints what is recorded, which is also the
  * only way to find out that something set one.
  */
+/**
+ * `report`: what the log adds up to.
+ *
+ * `log` answers what happened just now. This answers the question shadow mode
+ * is actually asking, which is what enforcing would have stopped and whether any
+ * of it was work the user wanted done.
+ */
+export function runReport(io: RunStreams): number {
+  io.output.write(`${formatSummary(summarise(recentRecords(0)))}\n`);
+  return 0;
+}
+
+/**
+ * `replay`: decide again, with another policy, over what was already judged.
+ *
+ * Choosing a threshold by reasoning about it is guesswork. The log holds the
+ * probabilities each past decision came from and the decision functions are
+ * pure, so a candidate policy can be run over real traffic.
+ */
+export function runReplay(policyPath: string | undefined, io: RunStreams): number {
+  const path = policyPath ?? defaultPolicyPath();
+  let policy: Policy;
+  try {
+    policy = loadPolicy(path);
+  } catch (error) {
+    const detail = error instanceof PolicyError ? error.message : messageFor(error);
+    io.errorOutput.write(`agent-chaperone: ${path} could not be read: ${detail}\n`);
+    return EXIT_USAGE;
+  }
+  io.output.write(`${formatReplay(replay(recentRecords(0), policy), path)}\n`);
+  return 0;
+}
+
 export function runTask(
   asked: { readonly text?: string; readonly clear: boolean },
   io: RunStreams,
@@ -604,6 +650,12 @@ export async function run(
   }
   if (asked.kind === 'task') {
     return runTask(asked, io);
+  }
+  if (asked.kind === 'report') {
+    return runReport(io);
+  }
+  if (asked.kind === 'replay') {
+    return runReplay(asked.policyPath, io);
   }
   if (asked.kind === 'hook') {
     return runHook(asked.side, io);
