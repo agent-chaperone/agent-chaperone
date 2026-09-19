@@ -74,20 +74,27 @@ A held call cannot wait for a client-specific interface, so the agent is handed 
 
 The token names one call rather than one tool, keyed by a fingerprint of the server, the tool and the redacted arguments, so agreeing to a write to one path does not release a write to another. It is spent the moment it is read, and it expires, because a token left behind by a session that ended is a standing permission nobody remembers granting. A deny list is not approvable: that is a standing rule the user wrote, not a question they were asked, and the command says so and points at the policy file.
 
+### Hooks adapter (#11)
+
+`agent-chaperone hook pre` and `hook post` read a client's hook payload on stdin and answer on stdout, with the same policy, rules, questions, decisions and audit log as the proxy. This is the path to a client's own shell, file edits and web fetches, which never travel over MCP and are where most of the damage lives on the clients people use.
+
+Four things came out of reading a client's published hook contract rather than assuming. A held call asks the client to prompt the user, because they are already at the keyboard. A forwarded call returns no decision rather than allowing, because allowing would skip the permission prompts the user set up. A replacement for a result must match that tool's output shape or it is discarded while the original reaches the model, so the replacement is derived from the shape that arrived rather than from a table of tools, and it is placed by walking the whole output rather than its top level, because a file read nests its contents and an MCP tool returns a bare array of blocks. And a failed tool is a separate event that accepts added context but no replacement, so its result can be annotated and never withheld.
+
+Every replacement now travels with a note carried in its own field. A replacement that does not match a tool's own output schema is discarded without complaint while the original reaches the model, and nothing here can know every schema, so the note arrives whether or not the replacement is kept. Annotating keeps the result and adds a banner rather than replacing the body, on both the proxy and the hook path.
+
+The worked configuration is in [`docs/hooks.md`](./docs/hooks.md).
+
 ### Benchmark
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
-Nothing in flight. A session is screened, recorded, and a held call can be released. What is missing is the tools that never go through MCP.
+Nothing in flight. Everything M1 needs is built: MCP traffic and a client's own tools are both screened, every decision is recorded, and a held call can be released.
 
 ## What's Next
 
-M1, in dependency order:
-
-1. `hooks` (#11): adapter for clients whose built-in tools bypass MCP.
-2. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
+1. `docs` (#12): the v0.1.0 README, which is also what first publishes to npm.
 
 ## Known Blockers / Decisions Pending
 
@@ -114,4 +121,4 @@ M1, in dependency order:
 | audit | done (#9) |
 | approvals | done (#10) |
 | cli | wraps, screens, `log`, `show` and `approve` (#8, #9, #10) |
-| hooks | not started |
+| hooks | done (#11) |

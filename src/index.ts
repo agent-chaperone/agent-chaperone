@@ -241,3 +241,26 @@ export {
   takeApproval,
 } from './approvals/index.js';
 export type { Approval, GrantOptions, TakeOptions } from './approvals/index.js';
+
+export {
+  BUILT_IN_SERVER,
+  POST_TOOL_USE,
+  POST_TOOL_USE_FAILURE,
+  PRE_TOOL_USE,
+  eventOf,
+  outputText,
+  postResponse,
+  preResponse,
+  readPayload,
+  replaceOutput,
+  runPostHook,
+  runPreHook,
+} from './hooks/index.js';
+export type {
+  HookCall,
+  HookOptions,
+  OutputText,
+  PostResponse,
+  PreResponse,
+  TextPath,
+} from './hooks/index.js';
