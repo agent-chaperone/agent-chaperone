@@ -25,6 +25,5 @@ curl -fsSL https://raw.githubusercontent.com/ethz-spylab/agentdojo/main/README.m
 curl -fsSL https://raw.githubusercontent.com/microsoft/BIPIA/main/README.md -o data/discusses/bipia-readme.md
 # Pin documentation sources to commit hashes so the benchmark remains reproducible.
 curl -fsSL https://raw.githubusercontent.com/promptfoo/promptfoo/d1aa582c9d799d4c04c32ad4dd3e35effbbd2114/site/docs/red-team/plugins/indirect-prompt-injection.md -o data/discusses/promptfoo-indirect-prompt-injection.md
-curl -fsSL https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/24efd6e7cbd7a074e6b3b781eb370891df40afad/docs/seps/2640-skills-extension.mdx -o data/discusses/mcp-skills-extension.mdx
 
 wc -c data/*/* | tail -1
