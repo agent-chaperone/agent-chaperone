@@ -164,10 +164,18 @@ export function findSecrets(
       continue;
     }
     // A fresh expression per call: a shared one carries lastIndex between calls.
-    const scanner = new RegExp(pattern.source, pattern.flags);
+    // `d` so the capture reports where it actually sat. Locating it by searching
+    // the match for its own text finds the first place that text appears, which
+    // is the scheme in `postgres://postgres:postgres@host` and the field name in
+    // `secret_access_key=secret_access_key`. That span was the one replaced, so
+    // the placeholder landed on the scheme while the credential stayed readable
+    // and the record still said a secret had been redacted.
+    const flags = pattern.flags.includes('d') ? pattern.flags : `${pattern.flags}d`;
+    const scanner = new RegExp(pattern.source, flags);
     for (const match of text.matchAll(scanner)) {
       const value = match[1] ?? match[0];
-      const start = match.index + (match[1] === undefined ? 0 : match[0].indexOf(match[1]));
+      // No group, or a group that did not participate, means the whole match.
+      const start = match.indices?.[1]?.[0] ?? match.index;
       found.push({ kind, start, end: start + value.length });
       if (found.length >= MAX_MATCHES) {
         break;
