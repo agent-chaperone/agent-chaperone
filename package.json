@@ -1,6 +1,6 @@
 {
   "name": "agent-chaperone",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A calibrated firewall for AI agent tool calls: screens them before they run, and screens tool results before the agent reads them. Covers MCP servers through a proxy and a client's built-in tools through a hooks adapter.",
   "license": "Apache-2.0",
   "homepage": "https://agentchaperone.dev",
