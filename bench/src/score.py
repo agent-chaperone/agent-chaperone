@@ -65,13 +65,16 @@ def main():
             r = json.loads(l)
             r["key"] = req_key(r["state"], battery_for(r))
             rows.append(r)
-    lat, toks, errs, n = [], 0, 0, 0
+    allow_gaps = "--allow-errors" in sys.argv
+    lat, toks, n = [], 0, 0
+    failed, unsent = [], []
     for r in rows:
         c = cache.get(r["key"])
         if not c:
+            unsent.append(r["id"])
             continue
         if "error" in c:
-            errs += 1
+            failed.append((r["id"], str(c["error"])))
             continue
         n += 1
         lat.append(c["latency_ms"]); toks += c["usage"]["input_tokens"]
@@ -80,7 +83,22 @@ def main():
         sev = a["severity"]["score"]
         by[r["dataset"]].append((r, score, sev, a))
 
-    print(f"scored {n} rows, {errs} errors, {toks/1e6:.2f}M input tokens, ${toks/1e6*PRICE_PER_MTOK:.3f}, latency p50 {pct(lat,.5):.0f} ms, p95 {pct(lat,.95):.0f} ms, mean tokens/req {toks/max(n,1):.0f}")
+    # A gap shrinks the denominator under every number below, and a smaller n is
+    # the one kind of wrong that reads as a normal result. So stop here rather
+    # than print a report somebody could reasonably commit.
+    if (failed or unsent) and not allow_gaps:
+        print(f"{len(failed)} rows failed and {len(unsent)} were never sent, so the sets are not fully answered.", file=sys.stderr)
+        for rid, err in failed[:5]:
+            print(f"  {rid}: {err[:140]}", file=sys.stderr)
+        for rid in unsent[:5]:
+            print(f"  {rid}: no response in the cache", file=sys.stderr)
+        rest = max(0, len(failed) - 5) + max(0, len(unsent) - 5)
+        if rest:
+            print(f"  and {rest} more", file=sys.stderr)
+        print("Run src/run.py to fill them in, or pass --allow-errors to score what is there.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"scored {n} rows, {len(failed)} errors, {len(unsent)} unsent, {toks/1e6:.2f}M input tokens, ${toks/1e6*PRICE_PER_MTOK:.3f}, latency p50 {pct(lat,.5):.0f} ms, p95 {pct(lat,.95):.0f} ms, mean tokens/req {toks/max(n,1):.0f}")
     print(f"\n{'dataset':14s} {'n':>5s} {'pos':>5s} {'AUC':>6s} | {'thr':>4s} {'prec':>6s} {'rec':>6s} {'FP':>4s} {'FN':>4s}")
     for ds, items in by.items():
         items = [i for i in items if not i[0]["meta"].get("ambiguous")]

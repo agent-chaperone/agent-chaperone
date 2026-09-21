@@ -19,6 +19,10 @@ SETS = ROOT / "data/sets"
 RES = ROOT / "results"
 RES.mkdir(exist_ok=True)
 CACHE = Path(os.environ.get("BENCH_CACHE", RES / "cache.jsonl"))
+# Failures go beside the cache rather than into it. The cache is committed and
+# is what reproduces the published numbers without a key, so it holds answers
+# and nothing else.
+ERRORS = Path(os.environ.get("BENCH_ERRORS", RES / "errors.jsonl"))
 MODEL = os.environ.get("JEV_MODEL", "jev-1.13.0")
 PRICE_PER_MTOK = 0.042
 
@@ -154,6 +158,22 @@ def load_cache():
     return cache
 
 
+def answered(cache, key):
+    """Whether this request already has a real answer.
+
+    A failure is written to the cache so it can be read afterwards, but it is
+    not an answer and the row has to go out again. Counting it as cached is how
+    one expired key or a single 429 quietly removes rows from the measured set:
+    the run reports nothing wrong, the scorer reports a smaller n, and a smaller
+    n looks exactly like a normal result.
+
+    A later success is appended after the failure and load_cache keeps the last
+    line for a key, so a retry supersedes the error without anything to clean up.
+    """
+    hit = cache.get(key)
+    return hit is not None and "error" not in hit
+
+
 def est_tokens(state, questions):
     s = json.dumps(state) + json.dumps({k: (q.model_dump() if hasattr(q, "model_dump") else "") for k, q in questions.items()})
     return len(s) // 4
@@ -178,7 +198,7 @@ def main():
         q = battery_for(r)
         k = req_key(r["state"], q)
         r["key"] = k
-        if k not in cache:
+        if not answered(cache, k):
             todo.append(r)
             est += est_tokens(r["state"], q)
     print(f"{len(rows)} rows, {len(todo)} uncached requests, ~{est/1e6:.2f}M tokens, ~${est/1e6*PRICE_PER_MTOK:.3f} at ${PRICE_PER_MTOK}/Mtok")
@@ -201,19 +221,28 @@ def main():
                 "usage": resp.usage.model_dump() if hasattr(resp.usage, "model_dump") else dict(resp.usage),
                 "answers": answers}
 
-    done = 0
-    with CACHE.open("a") as out, ThreadPoolExecutor(a.workers) as ex:
+    done, failed = 0, 0
+    with CACHE.open("a") as out, ERRORS.open("a") as bad, ThreadPoolExecutor(a.workers) as ex:
         futs = {ex.submit(one, r): r for r in todo}
         for f in as_completed(futs):
             r = futs[f]
             try:
                 rec = f.result()
-            except Exception as e:  # keep going, record the failure
-                rec = {"key": r["key"], "id": r["id"], "error": repr(e)}
+            except Exception as e:  # keep going, and say so at the end
+                bad.write(json.dumps({"key": r["key"], "id": r["id"], "error": repr(e)}) + "\n")
+                bad.flush()
+                failed += 1
+                done += 1
+                continue
             out.write(json.dumps(rec) + "\n"); out.flush()
             done += 1
             if done % 100 == 0:
                 print(f"  {done}/{len(todo)}")
+    if failed:
+        # Loud, because the next step is the scorer and a run that half worked
+        # produces a report that looks ordinary apart from a smaller n.
+        print(f"{failed} of {len(todo)} requests failed. They are in {ERRORS} and were not cached, so running this again retries them.")
+        sys.exit(1)
     print("done")
 
 

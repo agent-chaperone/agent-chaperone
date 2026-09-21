@@ -174,16 +174,16 @@ For the hook commands, which a client launches with a fixed command line, `AGENT
 
 ## Measured results
 
-The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-19, one request per item. The batteries sent were the ones the tool sends, question for question. The full run is 1,942 requests and costs $0.061 at the published price.
+The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-21, one request per item. The batteries sent were the ones the tool sends, question for question. The full run is 1,947 requests and costs $0.062 at the published price.
 
 | Set | Items | Positives | AUC | Precision / recall at 0.5 | at 0.3 |
 | --- | ---: | ---: | ---: | --- | --- |
 | InjecAgent tool responses | 1,394 | 1,054 | 0.976 | 0.989 / 0.805 | 0.956 / 0.949 |
 | BIPIA email | 250 | 200 | 1.000 | 1.000 / 0.825 | 1.000 / 0.850 |
-| Discusses injection, benign | 63 | 0 | n/a | 7 false positives | 10 false positives |
+| Discusses injection, benign | 68 | 0 | n/a | 8 false positives | 13 false positives |
 | Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.909 / 0.980 |
 
-Each screened call costs one model request, averaging 753 input tokens. A call the allow or deny list settles never reaches the model.
+Each screened call costs one model request, averaging 754 input tokens. A call the allow or deny list settles never reaches the model.
 
 Three questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either. `description_steers` asks about a tool description rather than a call or a result, and the benchmark has no set of tool lists to ask it against, so nothing above measures any of the three.
 

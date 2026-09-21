@@ -39,3 +39,4 @@ Thumbs.db
 *.local
 *.tmp
 *.bak
+bench/results/errors.jsonl
