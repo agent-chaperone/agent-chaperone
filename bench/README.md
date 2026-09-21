@@ -29,6 +29,10 @@ export TYPESAFE_API_KEY=...
 
 Any change to a question's wording or a set changes the request hash, so only the affected items are re-sent. Set `JEV_MODEL` to pin a different version.
 
+A request that fails is written to `results/errors.jsonl` and never to the cache, and the run exits non-zero saying how many went that way. Running it again sends them, because a failure is not an answer. That matters more than it sounds: a cached failure is a row that never gets measured again, and the only visible effect is that `n` gets smaller.
+
+For the same reason `score.py` refuses to print a report while any row is unanswered, and names the rows instead. `--allow-errors` scores what is there and puts the counts in the first line. A report built from an incomplete run is the one kind of wrong result that reads as a normal one.
+
 ## Sets
 
 | Set | Rows | Positives | What it measures |
@@ -91,7 +95,9 @@ src/score.py             metrics from the cache
 src/analyze.py           follow-up cuts: signal comparison, low thresholds, severity, misses
 src/mock_smoke.py        exercise response parsing against a fake API
 src/mock_full.py         run the full pipeline against a fake API
+src/mock_retry.py        check that failures are retried and that a gap stops the scorer
 results/cache.jsonl      recorded responses: probabilities, tokens, latency, model (a few superseded entries remain from fixture edits)
+results/errors.jsonl     requests that failed, if any; not committed, and superseded by a successful retry
 results/report.txt       output of score.py for the recorded run
 results/analysis.txt     follow-up cuts of the same run
 ```
