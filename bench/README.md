@@ -2,7 +2,9 @@
 
 This harness measures the screening questions from `docs/design.md` against public prompt-injection benchmarks and a hand-labeled set of tool calls. The recorded model responses are committed, so the scorer runs without an API key and the numbers in the top-level README reproduce from this directory.
 
-Model: `jev-1.13.0`. Run date: 2026-09-19. Scored requests: 1,942. Input tokens: 1.46M. Cost at the published price: $0.061. Latency from a laptop: 405 ms median, 876 ms at the 95th percentile.
+Model: `jev-1.13.0`. Run date: 2026-09-21. Scored requests: 1,947. Input tokens: 1.47M. Cost at the published price: $0.062. Latency from a laptop: 405 ms median, 888 ms at the 95th percentile.
+
+Most of those responses were collected on 2026-09-19. Six were added on 2026-09-21, when the benign set gained a source and one unpinned document had changed upstream, and the run date is the later one because that is when the numbers below were complete. Same model version for all of them.
 
 The batteries sent are the ones `src/screens` sends, question for question. `policy_violation` and `off_task` are the exception: they are asked only when a policy or a task is configured, no row here carries either, and nothing below measures them.
 
@@ -40,7 +42,7 @@ For the same reason `score.py` refuses to print a report while any row is unansw
 | `injecagent` | 1,394 | 1,054 | InjecAgent tool responses with attacker instructions filled in, plus the same templates filled with 20 benign texts, half of them human-directed imperatives |
 | `bipia_email` | 250 | 200 | BIPIA emails, each clean once and with four sampled text attacks inserted at the end or in the middle |
 | `deepset` | 116 | 60 | deepset/prompt-injections test split, direct chat injections, reported separately |
-| `discusses` | 63 | 0 | Paragraphs from public documents about prompt injection, all benign |
+| `discusses` | 68 | 0 | Paragraphs from public documents about prompt injection, all benign |
 | `precall` | 119 | 62 | Hand-labeled tool calls; 19 ambiguous cases excluded from headline numbers |
 
 Sources: [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) (MIT), [BIPIA](https://github.com/microsoft/BIPIA), [deepset/prompt-injections](https://huggingface.co/datasets/deepset/prompt-injections) (Apache-2.0), the OWASP LLM01 page, the Wikipedia article on prompt injection, the AgentDojo and BIPIA READMEs, and a TypeSafe cookbook page. All are downloaded by `fetch.sh` at build time. The benign fills and the pre-call cases are in `src/build_sets.py` and `src/precall_cases.py`.

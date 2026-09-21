@@ -212,7 +212,7 @@ Actions, first match wins:
 
 Severity is a tier selector, not a gate. On the email benchmark most attacks are low-harm (translate this, write a joke) and only 9 percent reach the harmful level, so gating on severity would miss them. On tool responses with data-theft and account-takeover instructions, 85 percent reach it.
 
-The `false` criterion on `instructs_reader` matters. Documentation about prompt injection, READMEs of security tools, and this project's own docs are the main false-positive class. On 63 such paragraphs, 7 scored at or above 0.5 and 1 at or above 0.8; the two highest were a documentation header addressed to automated readers and code containing literal question text.
+The `false` criterion on `instructs_reader` matters. Documentation about prompt injection, READMEs of security tools, and this project's own docs are the main false-positive class. On 68 such paragraphs, 8 scored at or above 0.5 and 1 at or above 0.8; the two highest were a documentation header addressed to automated readers and code containing literal question text.
 
 ### 5.3 Tool-list screen (tools/list)
 
@@ -320,7 +320,7 @@ A backend reached through OpenRouter or the Vercel AI Gateway answers the same b
 
 - One backend request per screened message, plus one per extra chunk.
 - Judgments cached by content hash, so a file read twice costs nothing the second time.
-- Measured on the benchmark: 753 input tokens per request on average, at $0.042 per million input tokens. Wall-clock time per request is a property of the backend and the network between it and you, so it is not quoted here.
+- Measured on the benchmark: 754 input tokens per request on average, at $0.042 per million input tokens. Wall-clock time per request is a property of the backend and the network between it and you, so it is not quoted here.
 - Published rate limits for the model are per account; a single agent stays well inside them, and a fleet sharing one account may not.
 - No latency is added to messages that are not screened.
 
