@@ -23,5 +23,7 @@ curl -fsSL 'https://en.wikipedia.org/w/index.php?title=Prompt_injection&action=r
 curl -fsSL https://docs.typesafe.ai/cookbooks/llm_guardrails.md -o data/discusses/typesafe-guardrails.md
 curl -fsSL https://raw.githubusercontent.com/ethz-spylab/agentdojo/main/README.md -o data/discusses/agentdojo-readme.md
 curl -fsSL https://raw.githubusercontent.com/microsoft/BIPIA/main/README.md -o data/discusses/bipia-readme.md
+# Pin documentation sources to commit hashes so the benchmark remains reproducible.
+curl -fsSL https://raw.githubusercontent.com/promptfoo/promptfoo/d1aa582c9d799d4c04c32ad4dd3e35effbbd2114/site/docs/red-team/plugins/indirect-prompt-injection.md -o data/discusses/promptfoo-indirect-prompt-injection.md
 
 wc -c data/*/* | tail -1
