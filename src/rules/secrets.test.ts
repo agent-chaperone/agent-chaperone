@@ -312,3 +312,47 @@ describe('redactJson on hostile shapes', () => {
     expect([...secrets].sort()).toEqual(['aws_key', 'github_token']);
   });
 });
+
+describe('the redacted span is the credential, not something that looks like it', () => {
+  // The span used to be found by searching the match for the captured text,
+  // which returns its first appearance. When the password equals the scheme or
+  // the username, that is an earlier position, so the placeholder landed there
+  // and the credential itself survived into the audit log under a record that
+  // said it had been redacted. Default credentials are exactly this shape.
+  const collisions: readonly (readonly [string, string, string])[] = [
+    [
+      'the scheme repeats as the password',
+      'postgres://postgres:postgres@db/app',
+      'postgres://postgres:',
+    ],
+    ['the username repeats as the password', 'mysql://root:root@db/app', 'mysql://root:'],
+    ['both repeat', 'amqp://guest:guest@rabbit:5672', 'amqp://guest:'],
+    ['the password sits inside the scheme', 'redis://user:redis@cache:6379', 'redis://user:'],
+    ['a common default pair', 'postgres://admin:admin@db-prod:5432/app', 'postgres://admin:'],
+  ];
+
+  for (const [what, text, prefix] of collisions) {
+    it(`redacts the password when ${what}`, () => {
+      const out = redactText(text);
+      expect(out.secrets.map((s) => s.kind)).toContain('connection_string');
+      // The scheme and the username survive, because neither is the credential.
+      expect(out.text.startsWith(`${prefix}${placeholder('connection_string')}@`)).toBe(true);
+    });
+  }
+
+  it('redacts the value when a field name is long enough to equal it', () => {
+    expect(redactText('secret_access_key=secret_access_key').text).toBe(
+      `secret_access_key=${placeholder('generic_api_key')}`,
+    );
+  });
+
+  it('still redacts when nothing collides', () => {
+    expect(redactText('postgres://admin:sup3rS3cretPw@db.internal:5432/prod').text).toBe(
+      `postgres://admin:${placeholder('connection_string')}@db.internal:5432/prod`,
+    );
+  });
+
+  it('leaves a whole-match kind alone, which has no capture group', () => {
+    expect(redactText(`id=${AWS}`).text).toBe(`id=${placeholder('aws_key')}`);
+  });
+});
