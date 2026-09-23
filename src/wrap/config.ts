@@ -76,6 +76,39 @@ function upstreamOf(entry: ServerEntry): string[] | undefined {
   return [entry.command, ...(args as string[])];
 }
 
+/**
+ * Keys a client uses to authenticate to a remote server itself.
+ *
+ * Once the entry runs the proxy, the client has nowhere to send them and the
+ * proxy never sees them, so they would sit in the file doing nothing while the
+ * server refused every call. `--header-env` is how a token reaches the proxy.
+ */
+const CLIENT_AUTH = ['headers', 'oauth', 'auth', 'authProviderType'] as const;
+
+/**
+ * Why a remote entry cannot be wrapped, or undefined when it can.
+ *
+ * The proxy reaches a URL over Streamable HTTP and nothing else. A client that
+ * says how to reach a server spells that `type: "http"`, or says nothing and
+ * lets the URL decide. Any other declared type is either a transport the proxy
+ * does not speak, such as legacy SSE, or a spelling this cannot promise to put
+ * back on unwrap, and both are left alone rather than guessed at.
+ */
+function remoteRefusal(entry: ServerEntry): string | undefined {
+  if (entry.type !== undefined && entry.type !== 'http') {
+    return `its transport type ${JSON.stringify(entry.type)} is not one the proxy reaches a URL over`;
+  }
+  const auth = CLIENT_AUTH.filter((key) => entry[key] !== undefined);
+  if (auth.length > 0) {
+    return `its ${auth.join(' and ')} would not reach the proxy; wrap it by hand and pass a token with --header-env`;
+  }
+  return undefined;
+}
+
+function isRemote(entry: ServerEntry): boolean {
+  return typeof entry.url === 'string' && /^https?:\/\//i.test(entry.url);
+}
+
 function wrapEntry(name: string, entry: ServerEntry): ServerEntry {
   const upstream = upstreamOf(entry) ?? [];
   // `--server` names the policy section after the key in this file, so what
@@ -83,7 +116,11 @@ function wrapEntry(name: string, entry: ServerEntry): ServerEntry {
   const rest = Object.fromEntries(
     Object.entries(entry).filter(([key]) => key !== 'command' && key !== 'args' && key !== 'url'),
   );
-  return { ...rest, command: COMMAND, args: ['--server', name, '--', ...upstream] };
+  // An entry that declared how to reach a remote server now runs a command, and
+  // a client that reads `type` would otherwise go looking for a URL it no
+  // longer has.
+  const type = isRemote(entry) && entry.type !== undefined ? { type: 'stdio' } : {};
+  return { ...rest, ...type, command: COMMAND, args: ['--server', name, '--', ...upstream] };
 }
 
 function unwrapEntry(entry: ServerEntry): ServerEntry | undefined {
@@ -101,7 +138,9 @@ function unwrapEntry(entry: ServerEntry): ServerEntry | undefined {
     Object.entries(entry).filter(([key]) => key !== 'command' && key !== 'args'),
   );
   if (/^https?:\/\//i.test(command)) {
-    return { ...keep, url: command };
+    // `stdio` on a wrapped remote entry was put there by wrapping an `http` one.
+    const type = keep['type'] === 'stdio' ? { type: 'http' } : {};
+    return { ...keep, ...type, url: command };
   }
   return { ...keep, command, ...(rest.length === 0 ? {} : { args: rest }) };
 }
@@ -163,6 +202,12 @@ export function rewrite(config: unknown, options: { readonly unwrap?: boolean } 
         // start.
         rewritten[name] = value;
         changes.push({ kind: 'skipped', name, why: 'it names no command or http url' });
+        continue;
+      }
+      const refusal = isRemote(entry) ? remoteRefusal(entry) : undefined;
+      if (refusal !== undefined) {
+        rewritten[name] = value;
+        changes.push({ kind: 'skipped', name, why: refusal });
         continue;
       }
       rewritten[name] = wrapEntry(name, entry);

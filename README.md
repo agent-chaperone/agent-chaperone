@@ -46,7 +46,7 @@ One change to the client's MCP configuration. Everything after `--` is the serve
 }
 ```
 
-`agent-chaperone wrap <config>` does that edit for you. It prints what it would change and writes nothing until you add `--write`, and it keeps the original beside the file, because a client will not start without this file and a bad edit breaks every server at once. `--unwrap` takes it back out. Running it twice changes nothing either way.
+`agent-chaperone wrap <config>` does that edit for you. It prints what it would change and writes nothing until you add `--write`, and it keeps the original beside the file, because a client will not start without this file and a bad edit breaks every server at once. `--unwrap` takes it back out. Running it twice changes nothing either way. A remote entry is wrapped only when the proxy can carry everything it needs: one that declares a transport other than Streamable HTTP, or carries headers or auth of its own, is left alone and the output says why, because the client would stop sending those and the proxy would never receive them. `--header-env` passes a token to the proxy instead.
 
 ## Screening a client's own tools
 
