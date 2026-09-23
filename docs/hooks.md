@@ -18,19 +18,19 @@ Add this to `~/.claude/settings.json` for every project, or to `.claude/settings
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Edit|Write|WebFetch",
+        "matcher": "Bash|PowerShell|Monitor|Edit|Write|NotebookEdit|WebFetch",
         "hooks": [{ "type": "command", "command": "agent-chaperone hook pre" }]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|PowerShell|Read|WebFetch",
+        "matcher": "Bash|PowerShell|Read|Grep|WebFetch",
         "hooks": [{ "type": "command", "command": "agent-chaperone hook post" }]
       }
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Bash|PowerShell|Read|WebFetch",
+        "matcher": "Bash|PowerShell|Read|Grep|WebFetch",
         "hooks": [{ "type": "command", "command": "agent-chaperone hook post" }]
       }
     ]
@@ -51,6 +51,14 @@ The matchers are a starting point rather than a recommendation. `PreToolUse` is 
 
 `PowerShell` is in both lists because on Windows, wherever that tool is enabled, the client routes shell commands through it and does not register `Bash` at all. A matcher naming only `Bash` screens nothing there, and it fails silently, which is the kind of gap worth spending five characters to close.
 
+`Monitor` is in the first list because it runs a command in the background under the same permission rules as Bash, or opens a WebSocket, and its arguments are screened the same way. It is not in the second, because its result is only the id of the background task.
+
+`NotebookEdit` is in the first list because a notebook cell is code that runs later, and a cell like `!rm -rf ~` is a shell command. Claude Code's own permission rules treat it as a file edit.
+
+`Grep` is in the second list because in content mode it returns the matching lines from files, which is the same way an injected instruction reaches the agent through `Read`. It is absent by default on macOS, Linux and WSL, and matters wherever it is present.
+
+A matcher made only of letters and `|` is a list of exact names, so `Edit` does not also match `NotebookEdit`, and each tool has to be named.
+
 `PostToolUseFailure` is a separate event, and without it a failed tool's output is never screened. It fires when a tool threw or an MCP tool returned an error result, and the output arrives as a top-level `error` string instead of in `tool_response`. That text is as attacker-controlled as anything in a result that succeeded: a fetch that fails still returns a body, and a shell command that exits non-zero still prints. The one difference is what can be done about it, which the next section covers.
 
 Screening needs `TYPESAFE_API_KEY` in the environment the client launches hooks in. Without it the deterministic rules still run, which is the allow and deny lists, and every judgment records that no model was asked.
@@ -70,6 +78,8 @@ servers:
 ## What the hooks do not see
 
 A hook fires on a tool call, so anything that reaches the model without one is outside this entirely. The clearest case is a file the user references directly in their own message: the client inlines it into the prompt, no tool runs, and no hook fires. Nothing here screens that, and nothing records it. The same goes for anything the client loads at startup, such as its own instruction files.
+
+The lines a `Monitor` reports after it starts are outside it too. They reach the agent as notifications rather than as a tool result, so no hook fires on them, and a log that somebody else can write to is a channel this does not screen.
 
 This is worth knowing before trusting the configuration above to cover file reads. It covers files the agent chose to read. It does not cover files the user handed it.
 

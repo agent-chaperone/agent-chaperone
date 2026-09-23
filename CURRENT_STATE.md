@@ -84,6 +84,8 @@ Every replacement now travels with a note carried in its own field. A replacemen
 
 The worked configuration is in [`docs/hooks.md`](./docs/hooks.md).
 
+The matchers name `Monitor` and `NotebookEdit` before a call and `Grep` after one (#76). Monitor runs commands under the same permission rules as Bash, a notebook cell is code that runs later, and Grep returns lines from files, which is how an injected instruction arrives through `Read` too. A matcher of plain names is exact, so `Edit` never covered `NotebookEdit`. The adapter needed no change for any of them, and a test against Grep's published output type shows a withheld result keeps the `mode` field the client checks. The README, `docs/hooks.md` and the plugin carry the same configuration, and a test fails when any of the three differs.
+
 ### Claude Code plugin (#74)
 
 The hook configuration also ships as a Claude Code plugin: `/plugin marketplace add agent-chaperone/agent-chaperone`, then `/plugin install agent-chaperone@agent-chaperone`. It registers the same three entries as `docs/hooks.md`, a test keeps the two identical, and the skill under `skills/` comes along with no configuration of its own.

@@ -86,17 +86,24 @@ describe('the plugin hooks match the documented configuration', () => {
   // The plugin and docs/hooks.md describe the same setup two ways, and a matcher
   // that drifts in one of them fails silently: a tool that is not matched is
   // simply never screened.
-  const documented = ((): HookConfig => {
-    const doc = read('docs/hooks.md');
-    // The exact heading, so a later heading that starts the same way cannot be taken for it.
-    const section = doc.slice(doc.indexOf('\n## Claude Code\n'));
-    const block = /```json\n([\s\S]*?)\n```/.exec(section)?.[1];
+  /** The first JSON block under an exact heading, so a later heading that starts the same way cannot be taken for it. */
+  const hooksUnder = (path: string, heading: string): HookConfig => {
+    const doc = read(path);
+    const at = doc.indexOf(`\n${heading}\n`);
+    const block = at === -1 ? undefined : /```json\n([\s\S]*?)\n```/.exec(doc.slice(at))?.[1];
     if (block === undefined) {
-      throw new Error('docs/hooks.md has no JSON block under "## Claude Code"');
+      throw new Error(`${path} has no JSON block under "${heading}"`);
     }
     return (JSON.parse(block) as { hooks: HookConfig }).hooks;
-  })();
+  };
+  const documented = hooksUnder('docs/hooks.md', '## Claude Code');
   const plugin = (JSON.parse(read('hooks/hooks.json')) as { hooks: HookConfig }).hooks;
+
+  it('is the configuration the README shows too', () => {
+    // A third copy, and the one most people read first.
+    const readme = hooksUnder('README.md', "## Screening a client's own tools");
+    expect(readme).toEqual(documented);
+  });
 
   it('registers the same events', () => {
     expect(Object.keys(plugin).sort()).toEqual(Object.keys(documented).sort());
