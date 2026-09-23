@@ -26,6 +26,10 @@ agent-chaperone/
     audit/       JSONL writer, and the commands that read it
     approvals/   Single-use tokens that release one held call
     hooks/       Adapter for a client's built-in tools               (#11)
+  .claude-plugin/  Claude Code plugin manifest and the marketplace entry that lists it
+  hooks/           The plugin's hook registrations, kept identical to docs/hooks.md
+  scripts/         Node scripts that need no build: release notes, the plugin's hook launcher
+  skills/          The agent skill, shipped in the npm package and picked up by the plugin
   bench/
     src/         Set builders, runner, scorer
     results/     Recorded model responses and reports

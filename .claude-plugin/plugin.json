@@ -1,0 +1,12 @@
+{
+  "name": "agent-chaperone",
+  "description": "Screens Claude Code's own tool calls before they run and their results before the agent reads them. Starts in shadow mode, which blocks nothing.",
+  "author": {
+    "name": "Sepehr Safari",
+    "url": "https://github.com/sepehr-safari"
+  },
+  "homepage": "https://agentchaperone.dev",
+  "repository": "https://github.com/agent-chaperone/agent-chaperone",
+  "license": "Apache-2.0",
+  "keywords": ["security", "hooks", "prompt-injection", "guardrails", "agent-security"]
+}

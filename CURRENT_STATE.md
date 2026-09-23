@@ -4,7 +4,7 @@
 
 ## Current Version
 
-`0.3.0`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
+`0.3.1`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
 
 ## Active Milestone
 
@@ -84,13 +84,21 @@ Every replacement now travels with a note carried in its own field. A replacemen
 
 The worked configuration is in [`docs/hooks.md`](./docs/hooks.md).
 
+### Claude Code plugin (#74)
+
+The hook configuration also ships as a Claude Code plugin: `/plugin marketplace add agent-chaperone/agent-chaperone`, then `/plugin install agent-chaperone@agent-chaperone`. It registers the same three entries as `docs/hooks.md`, a test keeps the two identical, and the skill under `skills/` comes along with no configuration of its own.
+
+The hooks run `scripts/plugin-hook.mjs`. It starts a global `agent-chaperone` when one is on the path, and otherwise installs the matching version once into the plugin's data directory, with its own npm cache, and runs it directly after that: 13 seconds for the first call and a seventh of a second for each one after, measured. The version comes from the `package.json` in the same checkout, so the plugin has no version of its own to forget to bump. It never writes to stdout and never exits 2 for a failure of its own, because the first makes Claude Code discard the decision and the second blocks the tool call. A failed install is not retried for ten minutes.
+
+Three designs were tried before this one and each failed a real run. Running `npx` on every call cost 1.7 seconds a call. With `--prefer-offline` it cost 0.36 seconds, but trusted npm's cached list of versions, so a list cached before a release reported the release as missing. And an entry-point check skipped everything and exited 0 whenever the plugin cache sat behind a symlink, which switched the screens off silently. The launcher has no such check now, and a test starts it through a symlink.
+
 ### Release (#12)
 
 `package.json` carries the publishable metadata and no longer says `private`, the README is written for somebody installing the thing rather than reading about it, and the release workflow publishes and nothing else. It used to open a version pull request of its own, which is not how anything here gets written.
 
 ### Benchmark
 
-`bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,942 recorded responses from `jev-1.13.0` (2026-09-18). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
+`bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,947 recorded responses from `jev-1.13.0` (2026-09-21). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
 ## What's In Progress
 
