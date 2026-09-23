@@ -94,6 +94,10 @@ The hooks run `scripts/plugin-hook.mjs`. It starts a global `agent-chaperone` wh
 
 Three designs were tried before this one and each failed a real run. Running `npx` on every call cost 1.7 seconds a call. With `--prefer-offline` it cost 0.36 seconds, but trusted npm's cached list of versions, so a list cached before a release reported the release as missing. And an entry-point check skipped everything and exited 0 whenever the plugin cache sat behind a symlink, which switched the screens off silently. The launcher has no such check now, and a test starts it through a symlink.
 
+### Putting a client's servers behind the screen (#60, #80)
+
+`agent-chaperone wrap <config>` rewrites every server under `mcpServers` or `servers` to run through the proxy, prints the change, and writes only with `--write`, keeping the original beside the file. A remote entry is wrapped only when the proxy can carry it: a declared `type: "http"` becomes `stdio` and comes back on `--unwrap`, and an entry declaring any other transport, or carrying `headers`, `oauth`, `auth` or `authProviderType`, is skipped with the reason. It reads strict JSON, so a configuration with comments is refused rather than rewritten.
+
 ### Release (#12)
 
 `package.json` carries the publishable metadata and no longer says `private`, the README is written for somebody installing the thing rather than reading about it, and the release workflow publishes and nothing else. It used to open a version pull request of its own, which is not how anything here gets written.

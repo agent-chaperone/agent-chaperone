@@ -122,6 +122,94 @@ describe('putting a client config behind the screen', () => {
   });
 });
 
+describe('a remote entry the proxy has to be able to reach', () => {
+  const remote = { type: 'http', url: 'https://example.com/mcp' };
+
+  it('says stdio once a typed http entry runs a command', () => {
+    const done = rewrite(config({ remote }, 'servers'));
+
+    // Left as http, a client that reads `type` goes looking for a URL the entry
+    // no longer has.
+    expect(entryFor(done, 'remote', 'servers')).toEqual({
+      type: 'stdio',
+      command: COMMAND,
+      args: ['--server', 'remote', '--', 'https://example.com/mcp'],
+    });
+  });
+
+  it('adds no type to an entry that never had one', () => {
+    const done = rewrite(config({ remote: { url: 'https://example.com/mcp' } }));
+
+    expect(entryFor(done, 'remote')).not.toHaveProperty('type');
+  });
+
+  it('leaves a stdio entry with a type as it was, apart from the command', () => {
+    const done = rewrite(config({ filesystem: { type: 'stdio', ...filesystem } }, 'servers'));
+
+    expect(entryFor(done, 'filesystem', 'servers')['type']).toBe('stdio');
+  });
+
+  it('puts http back on unwrap', () => {
+    const back = rewrite(rewrite(config({ remote }, 'servers')).config, { unwrap: true });
+
+    expect(entryFor(back, 'remote', 'servers')).toEqual(remote);
+  });
+
+  it('skips a legacy SSE entry, which the proxy cannot reach', () => {
+    const sse = { type: 'sse', url: 'https://example.com/sse' };
+    const done = rewrite(config({ sse }, 'servers'));
+
+    expect(entryFor(done, 'sse', 'servers')).toEqual(sse);
+    expect(done.changes).toEqual([
+      {
+        kind: 'skipped',
+        name: 'sse',
+        why: 'its transport type "sse" is not one the proxy reaches a URL over',
+      },
+    ]);
+  });
+
+  it('skips a type it could not put back exactly', () => {
+    const other = { type: 'streamableHttp', url: 'https://example.com/mcp' };
+    const done = rewrite(config({ other }));
+
+    expect(entryFor(done, 'other')).toEqual(other);
+    expect(done.changes[0]?.kind).toBe('skipped');
+  });
+
+  it('skips an entry whose headers would stop reaching the server', () => {
+    const authed = { ...remote, headers: { Authorization: 'Bearer ${input:token}' } };
+    const done = rewrite(config({ authed }, 'servers'));
+
+    expect(entryFor(done, 'authed', 'servers')).toEqual(authed);
+    expect(done.changes).toEqual([
+      {
+        kind: 'skipped',
+        name: 'authed',
+        why: 'its headers would not reach the proxy; wrap it by hand and pass a token with --header-env',
+      },
+    ]);
+  });
+
+  it('names every auth key an entry carries', () => {
+    const authed = { url: 'https://example.com/mcp', oauth: {}, authProviderType: 'google' };
+    const done = rewrite(config({ authed }));
+    const skipped = done.changes[0];
+
+    expect(skipped?.kind === 'skipped' ? skipped.why : '').toMatch(
+      /^its oauth and authProviderType /,
+    );
+  });
+
+  it('still wraps the other servers in a file with one it skips', () => {
+    const done = rewrite(
+      config({ sse: { type: 'sse', url: 'https://example.com/sse' }, filesystem }),
+    );
+
+    expect(done.changes.map((one) => one.kind)).toEqual(['skipped', 'wrapped']);
+  });
+});
+
 describe('taking a client config back out', () => {
   it('restores the command and args it started with', () => {
     const wrapped = rewrite(config({ filesystem }));
