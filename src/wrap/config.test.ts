@@ -201,6 +201,26 @@ describe('a remote entry the proxy has to be able to reach', () => {
     );
   });
 
+  it('says what to change on a Gemini CLI httpUrl entry', () => {
+    const legacy = { httpUrl: 'https://example.com/mcp' };
+    const done = rewrite(config({ legacy }));
+
+    expect(entryFor(done, 'legacy')).toEqual(legacy);
+    expect(done.changes).toEqual([
+      {
+        kind: 'skipped',
+        name: 'legacy',
+        why: 'httpUrl is an older spelling; change it to url with "type": "http" and run wrap again',
+      },
+    ]);
+  });
+
+  it('wraps the url and type that replace httpUrl', () => {
+    const done = rewrite(config({ remote: { url: 'https://example.com/mcp', type: 'http' } }));
+
+    expect(done.changes).toEqual([{ kind: 'wrapped', name: 'remote' }]);
+  });
+
   it('still wraps the other servers in a file with one it skips', () => {
     const done = rewrite(
       config({ sse: { type: 'sse', url: 'https://example.com/sse' }, filesystem }),

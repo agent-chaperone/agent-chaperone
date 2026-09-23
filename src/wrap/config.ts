@@ -196,6 +196,19 @@ export function rewrite(config: unknown, options: { readonly unwrap?: boolean } 
         changes.push({ kind: 'already', name });
         continue;
       }
+      if (upstreamOf(entry) === undefined && typeof entry['httpUrl'] === 'string') {
+        // Gemini CLI's deprecated spelling of a Streamable HTTP server. The proxy
+        // could reach it, but unwrap could not give back an `httpUrl` it never
+        // recorded, so the entry is left for the one-line change Gemini CLI
+        // itself recommends.
+        rewritten[name] = value;
+        changes.push({
+          kind: 'skipped',
+          name,
+          why: 'httpUrl is an older spelling; change it to url with "type": "http" and run wrap again',
+        });
+        continue;
+      }
       if (upstreamOf(entry) === undefined) {
         // No command and no http URL. A transport this cannot reach is left
         // exactly as it is rather than rewritten into something that will not

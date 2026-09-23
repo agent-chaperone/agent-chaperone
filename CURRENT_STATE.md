@@ -96,7 +96,7 @@ Three designs were tried before this one and each failed a real run. Running `np
 
 ### Putting a client's servers behind the screen (#60, #80)
 
-`agent-chaperone wrap <config>` rewrites every server under `mcpServers` or `servers` to run through the proxy, prints the change, and writes only with `--write`, keeping the original beside the file. A remote entry is wrapped only when the proxy can carry it: a declared `type: "http"` becomes `stdio` and comes back on `--unwrap`, and an entry declaring any other transport, or carrying `headers`, `oauth`, `auth` or `authProviderType`, is skipped with the reason. It reads strict JSON, so a configuration with comments is refused rather than rewritten.
+`agent-chaperone wrap <config>` rewrites every server under `mcpServers` or `servers` to run through the proxy, prints the change, and writes only with `--write`, keeping the original beside the file. A remote entry is wrapped only when the proxy can carry it: a declared `type: "http"` becomes `stdio` and comes back on `--unwrap`, and an entry declaring any other transport, or carrying `headers`, `oauth`, `auth` or `authProviderType`, is skipped with the reason. Gemini CLI's deprecated `httpUrl` is skipped with the one-line change that makes it wrappable, `url` with `"type": "http"`. It reads strict JSON, so a configuration with comments is refused rather than rewritten.
 
 ### Release (#12)
 
