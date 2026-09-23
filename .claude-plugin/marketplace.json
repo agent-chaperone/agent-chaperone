@@ -1,0 +1,15 @@
+{
+  "name": "agent-chaperone",
+  "description": "agent-chaperone, a runtime screen for Claude Code's own tool calls and the results they return.",
+  "owner": {
+    "name": "Sepehr Safari",
+    "url": "https://github.com/sepehr-safari"
+  },
+  "plugins": [
+    {
+      "name": "agent-chaperone",
+      "source": "./",
+      "description": "Screens Claude Code's own tool calls before they run and their results before the agent reads them. Starts in shadow mode, which blocks nothing."
+    }
+  ]
+}

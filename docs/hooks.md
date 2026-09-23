@@ -38,6 +38,15 @@ Add this to `~/.claude/settings.json` for every project, or to `.claude/settings
 }
 ```
 
+The same configuration ships as a Claude Code plugin, which registers these three entries and the skill in one step:
+
+```
+/plugin marketplace add agent-chaperone/agent-chaperone
+/plugin install agent-chaperone@agent-chaperone
+```
+
+Its hooks run `scripts/plugin-hook.mjs`. That starts a global `agent-chaperone` when one is on the path. Otherwise, on first use, it installs the version matching the plugin into the directory Claude Code gives the plugin for its own data, with an npm cache of its own there too, and runs that copy directly from then on. The first screened call waits for the install. A failed install is not retried for ten minutes, so the calls after it fail at once rather than each waiting on npm again, and every failure lets the call through rather than blocking it. A test keeps the plugin's matchers identical to the ones above, since a matcher that drifts in one of the two fails silently.
+
 The matchers are a starting point rather than a recommendation. `PreToolUse` is worth having on anything that changes state or sends data out. `PostToolUse` is worth having on anything that brings text in from somewhere the user did not write, which is where an injected instruction arrives.
 
 `PowerShell` is in both lists because on Windows, wherever that tool is enabled, the client routes shell commands through it and does not register `Bash` at all. A matcher naming only `Bash` screens nothing there, and it fails silently, which is the kind of gap worth spending five characters to close.

@@ -52,6 +52,17 @@ One change to the client's MCP configuration. Everything after `--` is the serve
 
 A proxy sees MCP traffic. It does not see the shell, the file edits or the web fetches a client runs itself, and on the clients people actually use those are where most of the damage lives. Two commands read a client's hook payload and answer on stdout, against the same policy file and the same log.
 
+On Claude Code the plugin registers all of it, from inside a session:
+
+```
+/plugin marketplace add agent-chaperone/agent-chaperone
+/plugin install agent-chaperone@agent-chaperone
+```
+
+It runs a global `agent-chaperone` when there is one. Otherwise the first screened call installs the version that matches the plugin into the plugin's own data directory, which took 13 seconds when I measured it, and every call after that runs that copy directly in about a seventh of a second. Nothing is installed globally and nothing lands in your own npm cache, and uninstalling the plugin removes all of it.
+
+Or register the hooks yourself, in `~/.claude/settings.json`:
+
 ```json
 {
   "hooks": {
