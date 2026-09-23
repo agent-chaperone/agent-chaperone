@@ -90,7 +90,21 @@ Or register the hooks yourself, in `~/.claude/settings.json`:
 
 The worked configuration, what each command answers, and what the hooks do not see are in [`docs/hooks.md`](./docs/hooks.md).
 
+Running [ECC](https://github.com/affaan-m/ECC) already? The plugin installs next to it and changes nothing in it. [agentchaperone.dev/guides/ecc](https://agentchaperone.dev/guides/ecc) covers what each one checks and how their hooks run together.
+
 One question needs something no tool call contains: whether a call has anything to do with what you actually asked for. `agent-chaperone task "fix the login redirect"` records that for the directory you are in, and the proxy and the hooks both read it. Without one, the question is never sent. It is believed for twelve hours, because a stale task would have the screen judging today's calls against last week's intent.
+
+## Which agents it covers
+
+The proxy works with any client that starts MCP servers from a configuration file, because it sits on the connection rather than inside the client. `wrap` edits a configuration that lists servers under `mcpServers` or `servers`; one in another format takes the change from [Wrapping an MCP server](#wrapping-an-mcp-server) by hand.
+
+An agent's own tools are a different matter. Reaching them takes that agent's hook contract, and each one differs in what a hook can stop before a call and change after it.
+
+| Agent | MCP servers | Its own shell, edits and fetches |
+| --- | --- | --- |
+| Claude Code | the proxy | the plugin, or hooks you register ([guide](https://agentchaperone.dev/guides/claude-code)) |
+| Claude Code with [ECC](https://github.com/affaan-m/ECC) | the proxy | the same plugin, next to ECC's hooks ([guide](https://agentchaperone.dev/guides/ecc)) |
+| Any other MCP client | the proxy | not yet ([#78](https://github.com/agent-chaperone/agent-chaperone/issues/78)) |
 
 ## The three modes
 
@@ -208,7 +222,7 @@ Methodology, per-threshold tables, the misses, and the raw recorded model respon
 - [`docs/hooks.md`](./docs/hooks.md): screening a client's own tools.
 - [`docs/adr/`](./docs/adr/): the decisions behind the design and why.
 - [`ROADMAP.md`](./ROADMAP.md): what lands in which version.
-- [agentchaperone.dev/guides](https://agentchaperone.dev/guides): putting a server behind the proxy, screening results for prompt injection, covering a client's own tools, and catching a secret on its way out.
+- [agentchaperone.dev/guides](https://agentchaperone.dev/guides): putting a server behind the proxy, screening results for prompt injection, covering a client's own tools, catching a secret on its way out, and running next to ECC.
 
 ## Contributing
 
