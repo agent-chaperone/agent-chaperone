@@ -68,19 +68,19 @@ Or register the hooks yourself, in `~/.claude/settings.json`:
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell|Edit|Write|WebFetch",
+        "matcher": "Bash|PowerShell|Monitor|Edit|Write|NotebookEdit|WebFetch",
         "hooks": [{ "type": "command", "command": "agent-chaperone hook pre" }]
       }
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|PowerShell|Read|WebFetch",
+        "matcher": "Bash|PowerShell|Read|Grep|WebFetch",
         "hooks": [{ "type": "command", "command": "agent-chaperone hook post" }]
       }
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Bash|PowerShell|Read|WebFetch",
+        "matcher": "Bash|PowerShell|Read|Grep|WebFetch",
         "hooks": [{ "type": "command", "command": "agent-chaperone hook post" }]
       }
     ]
