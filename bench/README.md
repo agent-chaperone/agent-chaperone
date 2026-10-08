@@ -59,8 +59,8 @@ Post-result sets score `instructs_reader`; the pre-call set scores `max(destruct
 | bipia_email | 1.000 | 0.3 | 1.000 | 0.850 | 0 | 30 |
 | | | 0.5 | 1.000 | 0.825 | 0 | 35 |
 | | | 0.8 | 1.000 | 0.530 | 0 | 94 |
-| discusses | n/a | 0.3 | | | 10 | |
-| | | 0.5 | | | 7 | |
+| discusses | n/a | 0.3 | | | 13 | |
+| | | 0.5 | | | 8 | |
 | | | 0.8 | | | 1 | |
 | deepset | 0.949 | 0.5 | 1.000 | 0.450 | 0 | 33 |
 | precall | 0.993 | 0.3 | 0.909 | 0.980 | 5 | 1 |
