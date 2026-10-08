@@ -1,10 +1,18 @@
 # agent-chaperone
 
-> A calibrated firewall for AI agent tool calls.
+> A runtime firewall for AI coding agents.
 
 [![npm](https://img.shields.io/npm/v/agent-chaperone.svg)](https://www.npmjs.com/package/agent-chaperone) [![CI](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml/badge.svg)](https://github.com/agent-chaperone/agent-chaperone/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/agent-chaperone/agent-chaperone/blob/main/LICENSE) [![Agent skill](https://img.shields.io/badge/agent%20skill-npx%20skills%20add-2b7fff)](./skills/agent-chaperone/SKILL.md)
 
-agent-chaperone screens an AI agent's tool calls before they run, and the tool results those calls return before the agent reads them. Every decision comes back as a probability, every threshold lives in a policy file rather than a prompt, and every judgment is written to a local log with the numbers that produced it.
+An agent that can use tools can do two kinds of damage. It can run something you would not have approved, such as a cleanup that also deletes your home directory, or a request that posts your credentials to a paste site. And it can read a tool result written to steer it: a web page, an issue or an email with instructions for the agent hidden inside.
+
+agent-chaperone sits between the agent and its tools. It screens each tool call before it runs and each tool result before the agent reads it, decides against thresholds in a policy file you control, and logs every judgment locally with the numbers that produced it.
+
+## What it does
+
+- **Holds a dangerous call before it runs.** Destructive commands, data leaving the machine, a credential in the arguments. On Claude Code a held call becomes the permission prompt you already answer.
+- **Withholds a result written to instruct the agent.** A result that scores high enough is replaced with a notice. One that scores lower reaches the agent with a warning marking the suspect part.
+- **Keeps secrets in.** Secret-shaped strings are redacted before anything is sent to be screened or written to the log, and a call that looks like it sends private data out is held.
 
 It starts in `shadow` mode, which blocks nothing. You read your own log first and decide what you would have wanted stopped.
 
@@ -19,17 +27,67 @@ Read this part before the rest.
 - **Not a guarantee.** The underlying model does not treat its input as hostile by default, and adaptive attacks written against this tool will get through. The numbers below report what it catches and what it misses, including the misses.
 - **Not local-only.** Screening sends the arguments and results being screened to the configured model backend, so that content leaves the machine. Secret-shaped strings are redacted first, and screening can be turned off per server for content that has to stay local.
 
-## Install
+## Quick start
+
+On Claude Code, the plugin covers the client's own shell, edits and fetches. From inside a session:
+
+```
+/plugin marketplace add agent-chaperone/agent-chaperone
+/plugin install agent-chaperone@agent-chaperone
+```
+
+For MCP servers in any client, install the CLI and put the servers in a configuration file behind the proxy. `wrap` prints what it would change and writes nothing until you add `--write`:
 
 ```bash
 npm install -g agent-chaperone
+agent-chaperone wrap ~/.cursor/mcp.json
+agent-chaperone wrap ~/.cursor/mcp.json --write
 ```
 
-A question the session has already answered is not asked again. An agent rereading one file is the same state and the same battery every time, which is the same request, and a cached answer records that it cost nothing rather than charging for a request nobody sent. The cache lives for the session, because content does not.
+Set `TYPESAFE_API_KEY` for the model's judgments; without it only the deterministic rules run, and the log says so. Then use the agent as you normally would, and read what it would have done:
 
-Screening needs `TYPESAFE_API_KEY` in the environment. Without it the deterministic rules still run, which is the allow and deny lists and the secret patterns, and every judgment records that no model was asked.
+```bash
+agent-chaperone log
+```
 
-`OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` will screen through a general model instead, with `AGENT_CHAPERONE_MODEL` choosing which. **Those probabilities are not calibrated.** Every threshold that ships here was chosen against measured numbers from Jev, and a general model returns a number that looks the same and means something else, so the results below say nothing about it. It exists so this runs where Jev cannot. Read your own log in shadow mode and tune from it before letting one of those decide anything.
+When the log stops surprising you, set `mode: enforce` in `~/.config/agent-chaperone/policy.yaml`. [The three modes](#the-three-modes) covers what changes.
+
+## Measured results
+
+What these numbers do and do not cover matters as much as the numbers, so the scope comes first: they measure the screening questions on public benchmark sets and a hand-labeled set of calls, with one model version, and adaptive attacks written against this tool are out of scope. A detection is not the same as a block either, because what happens to a flagged result depends on how high it scored.
+
+- **Results that try to instruct the agent** (InjecAgent, 1,394 tool responses): AUC 0.976. At the shipped thresholds, a result scoring 0.5 or more reaches the agent with a warning attached, which covered 80.5 percent of the injected responses with 9 false positives. One scoring 0.8 or more with harmful severity is withheld outright, which covered 34.1 percent with none.
+- **Dangerous tool calls** (100 hand-labeled calls, 51 of them dangerous): AUC 0.993. Taking the larger of the destructive and exfiltration answers, 0.7 caught 45 of the 51 with 1 false positive.
+- **Text that discusses injection without attempting it** (68 benign paragraphs): 8 crossed 0.5, which is the false-positive class to expect from documentation and security writing.
+
+The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-21, one request per item. The batteries sent were the ones the tool sends, question for question. The full run is 1,947 requests and costs $0.062 at the published price.
+
+| Set | Items | Positives | AUC | Precision / recall at 0.5 | at 0.3 |
+| --- | ---: | ---: | ---: | --- | --- |
+| InjecAgent tool responses | 1,394 | 1,054 | 0.976 | 0.989 / 0.805 | 0.956 / 0.949 |
+| BIPIA email | 250 | 200 | 1.000 | 1.000 / 0.825 | 1.000 / 0.850 |
+| Discusses injection, benign | 68 | 0 | n/a | 8 false positives | 13 false positives |
+| Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.909 / 0.980 |
+
+Each screened call costs one model request, averaging 754 input tokens. A call the allow or deny list settles never reaches the model.
+
+Three questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either. `description_steers` asks about a tool description rather than a call or a result, and the benchmark has no set of tool lists to ask it against, so nothing above measures any of the three.
+
+The hand-labeled set leans toward the built-in tool case on purpose: 37 of the 100 scored calls are shell commands, and 21 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
+
+Methodology, per-threshold tables, the misses, and the raw recorded model responses are in [`bench/`](./bench/README.md).
+
+## Which agents it covers
+
+The proxy works with any client that starts MCP servers from a configuration file, because it sits on the connection rather than inside the client. `wrap` edits a configuration that lists servers under `mcpServers` or `servers`; one in another format takes the change from [Wrapping an MCP server](#wrapping-an-mcp-server) by hand.
+
+An agent's own tools are a different matter. Reaching them takes that agent's hook contract, and each one differs in what a hook can stop before a call and change after it.
+
+| Agent | MCP servers | Its own shell, edits and fetches |
+| --- | --- | --- |
+| Claude Code | the proxy | the plugin, or hooks you register ([guide](https://agentchaperone.dev/guides/claude-code)) |
+| Claude Code with [ECC](https://github.com/affaan-m/ECC) | the proxy | the same plugin, next to ECC's hooks ([guide](https://agentchaperone.dev/guides/ecc)) |
+| Any other MCP client | the proxy | not yet ([#78](https://github.com/agent-chaperone/agent-chaperone/issues/78)) |
 
 ## Wrapping an MCP server
 
@@ -94,17 +152,13 @@ Running [ECC](https://github.com/affaan-m/ECC) already? The plugin installs next
 
 One question needs something no tool call contains: whether a call has anything to do with what you actually asked for. `agent-chaperone task "fix the login redirect"` records that for the directory you are in, and the proxy and the hooks both read it. Without one, the question is never sent. It is believed for twelve hours, because a stale task would have the screen judging today's calls against last week's intent.
 
-## Which agents it covers
+## Model backends and keys
 
-The proxy works with any client that starts MCP servers from a configuration file, because it sits on the connection rather than inside the client. `wrap` edits a configuration that lists servers under `mcpServers` or `servers`; one in another format takes the change from [Wrapping an MCP server](#wrapping-an-mcp-server) by hand.
+A question the session has already answered is not asked again. An agent rereading one file is the same state and the same battery every time, which is the same request, and a cached answer records that it cost nothing rather than charging for a request nobody sent. The cache lives for the session, because content does not.
 
-An agent's own tools are a different matter. Reaching them takes that agent's hook contract, and each one differs in what a hook can stop before a call and change after it.
+Screening needs `TYPESAFE_API_KEY` in the environment. Without it the deterministic rules still run, which is the allow and deny lists and the secret patterns, and every judgment records that no model was asked.
 
-| Agent | MCP servers | Its own shell, edits and fetches |
-| --- | --- | --- |
-| Claude Code | the proxy | the plugin, or hooks you register ([guide](https://agentchaperone.dev/guides/claude-code)) |
-| Claude Code with [ECC](https://github.com/affaan-m/ECC) | the proxy | the same plugin, next to ECC's hooks ([guide](https://agentchaperone.dev/guides/ecc)) |
-| Any other MCP client | the proxy | not yet ([#78](https://github.com/agent-chaperone/agent-chaperone/issues/78)) |
+`OPENROUTER_API_KEY` or `AI_GATEWAY_API_KEY` will screen through a general model instead, with `AGENT_CHAPERONE_MODEL` choosing which. **Those probabilities are not calibrated.** Every threshold that ships here was chosen against measured numbers from Jev, and a general model returns a number that looks the same and means something else, so the results below say nothing about it. It exists so this runs where Jev cannot. Read your own log in shadow mode and tune from it before letting one of those decide anything.
 
 ## The three modes
 
@@ -196,25 +250,6 @@ agent-chaperone hook pre|post                      Screen a client's own tools, 
 | `--no-store-content` | Record the judgments and not the arguments or results |
 
 For the hook commands, which a client launches with a fixed command line, `AGENT_CHAPERONE_POLICY` sets the policy path and `AGENT_CHAPERONE_STORE_CONTENT=0` does what `--no-store-content` does.
-
-## Measured results
-
-The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-21, one request per item. The batteries sent were the ones the tool sends, question for question. The full run is 1,947 requests and costs $0.062 at the published price.
-
-| Set | Items | Positives | AUC | Precision / recall at 0.5 | at 0.3 |
-| --- | ---: | ---: | ---: | --- | --- |
-| InjecAgent tool responses | 1,394 | 1,054 | 0.976 | 0.989 / 0.805 | 0.956 / 0.949 |
-| BIPIA email | 250 | 200 | 1.000 | 1.000 / 0.825 | 1.000 / 0.850 |
-| Discusses injection, benign | 68 | 0 | n/a | 8 false positives | 13 false positives |
-| Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.909 / 0.980 |
-
-Each screened call costs one model request, averaging 754 input tokens. A call the allow or deny list settles never reaches the model.
-
-Three questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either. `description_steers` asks about a tool description rather than a call or a result, and the benchmark has no set of tool lists to ask it against, so nothing above measures any of the three.
-
-The hand-labeled set leans toward the built-in tool case on purpose: 37 of the 100 scored calls are shell commands, and 21 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
-
-Methodology, per-threshold tables, the misses, and the raw recorded model responses are in [`bench/`](./bench/README.md).
 
 ## Design
 
