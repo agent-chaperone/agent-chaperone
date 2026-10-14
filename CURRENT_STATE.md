@@ -4,7 +4,7 @@
 
 ## Current Version
 
-`0.3.3`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
+`0.4.0`. Published to npm as [`agent-chaperone`](https://www.npmjs.com/package/agent-chaperone).
 
 ## Active Milestone
 
