@@ -129,6 +129,7 @@ describe('reading a payload', () => {
       response: bashOutput('a'),
       event: 'PostToolUse',
       session: 'abc123',
+      client: 'claude',
     });
   });
 

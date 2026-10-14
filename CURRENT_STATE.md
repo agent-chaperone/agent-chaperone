@@ -94,6 +94,16 @@ The hooks run `scripts/plugin-hook.mjs`. It starts a global `agent-chaperone` wh
 
 Three designs were tried before this one and each failed a real run. Running `npx` on every call cost 1.7 seconds a call. With `--prefer-offline` it cost 0.36 seconds, but trusted npm's cached list of versions, so a list cached before a release reported the release as missing. And an entry-point check skipped everything and exited 0 whenever the plugin cache sat behind a symlink, which switched the screens off silently. The launcher has no such check now, and a test starts it through a symlink.
 
+### Other agents' own tools (#78)
+
+The hook commands now answer Cursor, VS Code agent mode and Hermes Agent as well as Claude Code. The agent is read from the payload, because Cursor runs the hooks in Claude Code's settings files by default and VS Code can be told to, and both send their own shape to a command written for Claude Code. `--client` names it when the payload does not. Claude Code's answers are unchanged.
+
+What each agent allows decides what the screens can do there. Cursor does not act on `ask` before a call, so a held call is refused and the reason names `agent-chaperone approve <id>`. Neither Cursor nor VS Code lets a hook replace a built-in tool's result, so a result judged unsafe is annotated with a note saying it could not be withheld. Cursor also hands a post-tool hook only a summary for `Read` and `Grep`, so those results are not screened there. VS Code ignores matchers, so the command applies its own list of tools. Hermes ignores what a shell hook prints after a tool runs, so `integrations/hermes/` ships a Python plugin that calls the same command on both sides and replaces the result string; its approval prompt is keyed to the exact call, so "always" never covers the whole tool. MCP tools are left to the proxy on all three.
+
+`wrap` reads Hermes's YAML configuration under `mcp_servers` and keeps its comments.
+
+Each adapter was written from the agent's published contract and its source at a named version, with tests on payloads in each agent's shape. None has been checked in a live run of the agent yet, so #78 stays open for that and for the agents after these.
+
 ### Putting a client's servers behind the screen (#60, #80)
 
 `agent-chaperone wrap <config>` rewrites every server under `mcpServers` or `servers` to run through the proxy, prints the change, and writes only with `--write`, keeping the original beside the file. A remote entry is wrapped only when the proxy can carry it: a declared `type: "http"` becomes `stdio` and comes back on `--unwrap`, and an entry declaring any other transport, or carrying `headers`, `oauth`, `auth` or `authProviderType`, is skipped with the reason. Gemini CLI's deprecated `httpUrl` is skipped with the one-line change that makes it wrappable, `url` with `"type": "http"`. It reads strict JSON, so a configuration with comments is refused rather than rewritten.
@@ -139,4 +149,4 @@ The package is publishable and the version is 0.1.0. Publishing is a separate, d
 | audit | done (#9, evictions recorded #19) |
 | approvals | done (#10) |
 | cli | wraps, screens, `log`, `show` and `approve` (#8, #9, #10) |
-| hooks | done (#11) |
+| hooks | done (#11), Cursor, VS Code and Hermes Agent (#78) |

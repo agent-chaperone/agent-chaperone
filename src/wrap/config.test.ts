@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMMAND, formatChanges, isWrapped, rewrite } from './index.js';
+import { COMMAND, formatChanges, isWrapped, rewrite, rewriteYaml } from './index.js';
 
 const config = (servers: Record<string, unknown>, section = 'mcpServers') => ({
   [section]: servers,
@@ -271,5 +271,51 @@ describe('taking a client config back out', () => {
     const twice = rewrite(once.config, { unwrap: true });
 
     expect(entryFor(twice, 'filesystem')).toEqual(filesystem);
+  });
+});
+
+describe("Hermes's YAML configuration", () => {
+  const hermes = `# my Hermes settings
+model: some-model
+
+mcp_servers:
+  # the files I work on
+  files:
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/me/work"]
+    timeout: 120
+  off:
+    command: other-server
+    enabled: false
+`;
+
+  it('wraps every server under mcp_servers and keeps the comments around them', () => {
+    const done = rewriteYaml(hermes);
+    expect(done.changes.map((one) => one.kind)).toEqual(['wrapped', 'wrapped']);
+    expect(done.text).toContain('# my Hermes settings');
+    expect(done.text).toContain('# the files I work on');
+    expect(done.text).toContain('model: some-model');
+  });
+
+  it('writes an entry Hermes can start, keeping its own keys', () => {
+    const { text } = rewriteYaml(hermes);
+    const back = rewriteYaml(text, { unwrap: true });
+    expect(back.changes.map((one) => one.kind)).toEqual(['unwrapped', 'unwrapped']);
+    expect(text).toMatch(/command: agent-chaperone/);
+    expect(text).toContain('timeout: 120');
+    expect(text).toContain('enabled: false');
+    expect(back.text).toContain('command: npx');
+    expect(back.text).toContain('# the files I work on');
+  });
+
+  it('leaves a file it already wrapped alone', () => {
+    const once = rewriteYaml(hermes).text;
+    const twice = rewriteYaml(once);
+    expect(twice.changes.every((one) => one.kind === 'already')).toBe(true);
+    expect(twice.text).toBe(once);
+  });
+
+  it('refuses a file that is not YAML rather than guessing', () => {
+    expect(() => rewriteYaml('mcp_servers: [unclosed')).toThrow();
   });
 });

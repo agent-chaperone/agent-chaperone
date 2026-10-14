@@ -27,6 +27,8 @@
  * rather than implying the content was kept back.
  */
 
+import { clientOf, type Client } from './clients.js';
+
 export const PRE_TOOL_USE = 'PreToolUse';
 export const POST_TOOL_USE = 'PostToolUse';
 export const POST_TOOL_USE_FAILURE = 'PostToolUseFailure';
@@ -36,7 +38,10 @@ export interface HookCall {
   readonly input: unknown;
   /** Only on a post-tool payload: what the tool returned. */
   readonly response?: unknown;
-  /** Which event this payload came from, because what may be returned depends on it. */
+  /**
+   * Which event this payload came from, because what may be returned depends on
+   * it. Named the way Claude Code names it, whichever agent sent it.
+   */
   readonly event?: string;
   /**
    * The session the client is running, for a caller that wants to tie a
@@ -44,10 +49,103 @@ export interface HookCall {
    * writes it anywhere.
    */
   readonly session?: string;
+  /** Which agent sent it, because each one is answered in its own shape. */
+  readonly client?: Client;
+  /**
+   * The output arrived as a JSON string and was parsed to be read, so a
+   * replacement goes back as a JSON string too.
+   */
+  readonly encoded?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseRecord(text: string): Record<string, unknown> | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return isRecord(parsed) ? parsed : undefined;
+}
+
+/**
+ * An output some agents send as a JSON string rather than as the value.
+ *
+ * Read as the value it encodes, because a walk over the string would screen the
+ * braces and the key names along with the text. A string that does not parse,
+ * or parses to a bare scalar, is text and is read as text.
+ */
+function decoded(value: unknown): { readonly response: unknown; readonly encoded?: boolean } {
+  if (typeof value !== 'string') {
+    return { response: value };
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return { response: parsed, encoded: true };
+    }
+  } catch {
+    // Text, not JSON.
+  }
+  return { response: value };
+}
+
+/** The event a payload came from, named the way Claude Code names it. */
+function canonicalEvent(client: Client, raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || raw === '') {
+    return undefined;
+  }
+  if (client === 'cursor') {
+    return raw === 'preToolUse'
+      ? PRE_TOOL_USE
+      : raw === 'postToolUse'
+        ? POST_TOOL_USE
+        : raw === 'postToolUseFailure'
+          ? POST_TOOL_USE_FAILURE
+          : raw;
+  }
+  if (client === 'hermes') {
+    // A failed Hermes tool still returns a string the plugin can replace, so it
+    // is not the event that only accepts context.
+    return raw === 'pre_tool_call' ? PRE_TOOL_USE : raw === 'post_tool_call' ? POST_TOOL_USE : raw;
+  }
+  return raw;
+}
+
+/**
+ * What the tool returned, from wherever this agent puts it.
+ *
+ * Claude Code and VS Code use `tool_response`, and Claude Code puts a failed
+ * tool's output in a top-level `error` string. Cursor sends `tool_output` as a
+ * JSON string, and a failed tool's `error_message`. Hermes sends the result
+ * string under `extra.result`.
+ */
+function responseOf(
+  client: Client,
+  payload: Record<string, unknown>,
+): { readonly response?: unknown; readonly encoded?: boolean } {
+  if (client === 'cursor') {
+    if (Object.hasOwn(payload, 'tool_output')) {
+      return decoded(payload['tool_output']);
+    }
+    return Object.hasOwn(payload, 'error_message') ? { response: payload['error_message'] } : {};
+  }
+  if (client === 'hermes') {
+    const extra = payload['extra'];
+    return isRecord(extra) && Object.hasOwn(extra, 'result') ? decoded(extra['result']) : {};
+  }
+  // A failed tool carries its output in a top-level `error` string instead of in
+  // `tool_response`. Same text, same author, same reason to read it.
+  if (Object.hasOwn(payload, 'tool_response')) {
+    return client === 'vscode'
+      ? decoded(payload['tool_response'])
+      : { response: payload['tool_response'] };
+  }
+  return Object.hasOwn(payload, 'error') ? { response: payload['error'] } : {};
 }
 
 /**
@@ -55,33 +153,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  *
  * Tolerant in the same way the proxy is: a payload naming no tool is not
  * something to guess at. What happens next is the mode's decision, not this
- * function's.
+ * function's. `client` overrides which agent the payload is read as.
  */
-export function readPayload(text: string): HookCall | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
+export function readPayload(text: string, client?: Client): HookCall | undefined {
+  const parsed = parseRecord(text);
+  if (
+    parsed === undefined ||
+    typeof parsed['tool_name'] !== 'string' ||
+    parsed['tool_name'] === ''
+  ) {
     return undefined;
   }
-  if (!isRecord(parsed) || typeof parsed['tool_name'] !== 'string' || parsed['tool_name'] === '') {
-    return undefined;
-  }
-  const event = parsed['hook_event_name'];
-  // A failed tool carries its output in a top-level `error` string instead of in
-  // `tool_response`. Same text, same author, same reason to read it.
-  const response = Object.hasOwn(parsed, 'tool_response')
-    ? { response: parsed['tool_response'] }
-    : Object.hasOwn(parsed, 'error')
-      ? { response: parsed['error'] }
-      : {};
+  const from = client ?? clientOf(parsed);
+  const event = canonicalEvent(from, parsed['hook_event_name']);
+  const response = responseOf(from, parsed);
+  const session = parsed['session_id'] ?? parsed['conversation_id'];
   return {
     tool: parsed['tool_name'],
     input: parsed['tool_input'],
     ...response,
-    ...(typeof event === 'string' && event !== '' ? { event } : {}),
-    ...(typeof parsed['session_id'] === 'string' ? { session: parsed['session_id'] } : {}),
+    ...(event === undefined ? {} : { event }),
+    ...(typeof session === 'string' ? { session } : {}),
+    client: from,
   };
+}
+
+/**
+ * Which agent sent a payload and which event it came from, without needing the
+ * rest of it to be valid.
+ *
+ * Read on its own because the answer has to name the event it answers, in the
+ * agent's own shape, and a hook that cannot load its policy still has to answer.
+ */
+export function dialectOf(
+  text: string,
+  client?: Client,
+): { readonly client: Client; readonly event?: string } {
+  const parsed = parseRecord(text);
+  if (parsed === undefined) {
+    return { client: client ?? 'claude' };
+  }
+  const from = client ?? clientOf(parsed);
+  const event = canonicalEvent(from, parsed['hook_event_name']);
+  return { client: from, ...(event === undefined ? {} : { event }) };
 }
 
 /**
@@ -91,17 +205,7 @@ export function readPayload(text: string): HookCall | undefined {
  * hook that cannot load its policy still has to answer.
  */
 export function eventOf(text: string): string | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-  if (!isRecord(parsed)) {
-    return undefined;
-  }
-  const event = parsed['hook_event_name'];
-  return typeof event === 'string' && event !== '' ? event : undefined;
+  return dialectOf(text).event;
 }
 
 /** Where one run of text sat inside an output, so a replacement goes back in the same place. */
@@ -435,10 +539,49 @@ export interface PreResponse {
   readonly reason?: string;
   /** Shown to the user rather than to the model. */
   readonly warning?: string;
+  /**
+   * What identifies this exact call, on an agent whose approval prompt can
+   * remember an answer. Without it Hermes remembers "always" for the whole tool.
+   */
+  readonly key?: string;
 }
 
-/** What a client reads back from a pre-tool hook. */
-export function preResponse(response: PreResponse): string {
+/**
+ * What a client reads back from a pre-tool hook.
+ *
+ * No decision is answered with nothing on every agent. Allow is never sent: on
+ * Claude Code and VS Code it skips the prompts the user set up, and on Cursor it
+ * is what the others' deny and ask are weighed against.
+ */
+export function preResponse(response: PreResponse, client: Client = 'claude'): string {
+  if (client === 'cursor') {
+    // Cursor accepts ask on this event and does not act on it, so a hold that
+    // asked would run. A held call is refused, and the reason names the command
+    // that lets it through once.
+    if (response.decision === undefined) {
+      return '';
+    }
+    const reason = response.reason ?? '';
+    return JSON.stringify({ permission: 'deny', user_message: reason, agent_message: reason });
+  }
+  if (client === 'hermes') {
+    if (response.decision === undefined) {
+      return '';
+    }
+    const reason = response.reason ?? '';
+    // Hermes's approval prompt offers "always", and remembers it under the key a
+    // hook names, or under the tool's name when it names none. A hold with no key
+    // for the call is refused rather than offered, so answering "always" to one
+    // unreadable call cannot wave through every later use of the tool.
+    if (response.decision === 'ask' && response.key !== undefined) {
+      return JSON.stringify({
+        action: 'approve',
+        message: reason,
+        rule_key: `agent-chaperone:${response.key}`,
+      });
+    }
+    return JSON.stringify({ decision: 'block', reason });
+  }
   const warning = response.warning === undefined ? {} : { systemMessage: response.warning };
   if (response.decision === undefined) {
     // No decision. The call carries on through the user's own permission rules,
@@ -464,15 +607,47 @@ export interface PostResponse {
   readonly warning?: string;
   /** Which event is being answered, because a failed tool's output cannot be replaced. */
   readonly event?: string;
+  /** The output arrived as a JSON string, so the replacement goes back as one. */
+  readonly encoded?: boolean;
 }
 
 /** What a client reads back from a post-tool hook. */
-export function postResponse(response: PostResponse): string {
+export function postResponse(response: PostResponse, client: Client = 'claude'): string {
+  if (client === 'cursor') {
+    // Cursor replaces MCP results only, so for its own tools context is all
+    // there is. Its CLI does not wait for a post-tool hook on a built-in tool,
+    // which the documentation says.
+    return response.context === undefined
+      ? ''
+      : JSON.stringify({ additional_context: response.context });
+  }
+  if (client === 'hermes') {
+    // The plugin returns `result` in place of the tool's string, and appends
+    // `context` to whichever of the two the model is then given.
+    const output = response.output;
+    const result =
+      output === undefined
+        ? {}
+        : {
+            result:
+              typeof output === 'string' && response.encoded !== true
+                ? output
+                : JSON.stringify(output),
+          };
+    if (output === undefined && response.context === undefined) {
+      return '';
+    }
+    return JSON.stringify({
+      ...result,
+      ...(response.context === undefined ? {} : { context: response.context }),
+    });
+  }
+  // VS Code has no field that replaces a result, and the event a failed tool
+  // fires on Claude Code accepts context and nothing else. Sending a replacement
+  // to either would be discarded in silence, which is worse than not sending
+  // one, so the caller is told by getting nothing back to send.
   const failure = response.event === POST_TOOL_USE_FAILURE;
-  // A failed tool's event accepts context and nothing else. Sending a
-  // replacement there would be discarded in silence, which is worse than not
-  // sending one, so the caller is told by getting nothing back to send.
-  const output = failure ? undefined : response.output;
+  const output = failure || client === 'vscode' ? undefined : response.output;
   const warning = response.warning === undefined ? {} : { systemMessage: response.warning };
   if (output === undefined && response.context === undefined) {
     return response.warning === undefined ? '' : JSON.stringify(warning);

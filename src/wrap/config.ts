@@ -10,6 +10,8 @@
  * can be tested on shapes rather than on a filesystem.
  */
 
+import { isMap, parseDocument } from 'yaml';
+
 /** The binary a wrapped entry invokes. Global install is what the README documents. */
 export const COMMAND = 'agent-chaperone';
 
@@ -34,11 +36,12 @@ export interface Rewrite {
 /**
  * Where a client keeps its servers.
  *
- * Both spellings are in the wild, and a file may carry either. Anything else is
+ * `mcpServers` and `servers` are the JSON spellings, and `mcp_servers` is
+ * Hermes's, in YAML. A file may carry any of them. Anything else is
  * left alone rather than guessed at: a configuration this does not understand is
  * one it should not be editing.
  */
-export const SECTIONS = ['mcpServers', 'servers'] as const;
+export const SECTIONS = ['mcpServers', 'servers', 'mcp_servers'] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -256,4 +259,40 @@ export function formatChanges(changes: readonly Change[], unwrap: boolean): stri
       : `${acted} ${acted === 1 ? 'server' : 'servers'} would change.`,
   );
   return lines.join('\n');
+}
+
+/**
+ * The same rewrite, for a configuration kept in YAML.
+ *
+ * Only the entries that change are written back, into the document as it was
+ * parsed, so the comments and layout around them survive. A YAML configuration
+ * is one people edit by hand and annotate, and a rewrite that dropped every
+ * comment to wrap one server would be a worse trade than typing it.
+ */
+export function rewriteYaml(
+  text: string,
+  options: { readonly unwrap?: boolean } = {},
+): { readonly text: string; readonly changes: readonly Change[] } {
+  const document = parseDocument(text);
+  if (document.errors.length > 0) {
+    throw new Error(document.errors[0]?.message ?? 'it is not valid YAML');
+  }
+  const done = rewrite(document.toJS() as unknown, options);
+  const acted = new Set(
+    done.changes
+      .filter((one) => one.kind === 'wrapped' || one.kind === 'unwrapped')
+      .map((one) => one.name),
+  );
+  for (const section of SECTIONS) {
+    const servers = done.config[section];
+    if (!isRecord(servers) || !isMap(document.get(section))) {
+      continue;
+    }
+    for (const [name, entry] of Object.entries(servers)) {
+      if (acted.has(name)) {
+        document.setIn([section, name], document.createNode(entry));
+      }
+    }
+  }
+  return { text: document.toString(), changes: done.changes };
 }

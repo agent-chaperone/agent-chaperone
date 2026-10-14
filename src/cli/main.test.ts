@@ -1150,7 +1150,25 @@ describe('run', () => {
       expect(parseCommand(['hook', side])).toEqual({ kind: 'hook', side });
     });
 
-    it.each([[['hook']], [['hook', 'sideways']]])('refuses %o', (argv) => {
+    it('reads which agent is calling, on either side of the hook side', () => {
+      expect(parseCommand(['hook', 'pre', '--client', 'vscode'])).toEqual({
+        kind: 'hook',
+        side: 'pre',
+        client: 'vscode',
+      });
+      expect(parseCommand(['hook', '--client', 'hermes', 'post'])).toEqual({
+        kind: 'hook',
+        side: 'post',
+        client: 'hermes',
+      });
+    });
+
+    it.each([
+      [['hook']],
+      [['hook', 'sideways']],
+      [['hook', 'pre', '--client']],
+      [['hook', 'pre', '--client', 'emacs']],
+    ])('refuses %o', (argv) => {
       expect(parseCommand(argv)).toEqual({ kind: 'usage' });
     });
 

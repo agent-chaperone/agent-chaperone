@@ -10,6 +10,7 @@ export {
   POST_TOOL_USE_FAILURE,
   PRE_TOOL_USE,
   annotateOutput,
+  dialectOf,
   eventOf,
   outputText,
   postResponse,
@@ -19,6 +20,18 @@ export {
   survivingText,
 } from './payload.js';
 export { BUILT_IN_SERVER, runPostHook, runPreHook } from './run.js';
+export {
+  CLIENTS,
+  HERMES_POST_TOOLS,
+  HERMES_PRE_TOOLS,
+  VSCODE_POST_TOOLS,
+  VSCODE_PRE_TOOLS,
+  canReplace,
+  clientOf,
+  isClient,
+  screensTool,
+} from './clients.js';
 
 export type { HookCall, OutputText, PostResponse, PreResponse, TextPath } from './payload.js';
 export type { HookOptions } from './run.js';
+export type { Client } from './clients.js';

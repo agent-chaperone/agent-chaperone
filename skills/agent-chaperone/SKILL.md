@@ -27,7 +27,7 @@ Recognise the condition by the literal prefix of the message you receive.
 
 How the condition arrives, so you are not inferring it:
 
-- Through a hook: `hookSpecificOutput.permissionDecision` is `"deny"` for a block and `"ask"` for a hold, with the notice in `permissionDecisionReason`. The process exits 0 either way.
+- Through a hook: `hookSpecificOutput.permissionDecision` is `"deny"` for a block and `"ask"` for a hold, with the notice in `permissionDecisionReason`. The process exits 0 either way. Cursor, VS Code and Hermes Agent get their own shapes, described under Other clients in [reference/hooks.md](reference/hooks.md).
 - Through the MCP proxy: an ordinary tool result with `isError: true` whose text part is the notice. It is not a JSON-RPC protocol error.
 
 ## Installing

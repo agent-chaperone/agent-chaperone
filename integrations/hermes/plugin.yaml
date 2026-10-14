@@ -1,0 +1,5 @@
+name: agent-chaperone
+description: "Screens Hermes's own tool calls before they run and their results before the model reads them, with the agent-chaperone command."
+provides_hooks:
+  - pre_tool_call
+  - transform_tool_result

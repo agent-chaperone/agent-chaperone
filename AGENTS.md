@@ -30,6 +30,7 @@ agent-chaperone/
   hooks/           The plugin's hook registrations, kept identical to docs/hooks.md
   scripts/         Node scripts that need no build: release notes, the plugin's hook launcher
   skills/          The agent skill, shipped in the npm package and picked up by the plugin
+  integrations/    Plugins for other agents, shipped in the npm package: Hermes Agent's under hermes/
   bench/
     src/         Set builders, runner, scorer
     results/     Recorded model responses and reports

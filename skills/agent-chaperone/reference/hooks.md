@@ -57,4 +57,8 @@ Stderr from a hook that exits 0 reaches the debug log and nowhere else, so exiti
 
 ## Other clients
 
-The entries above are for Claude Code, written against its published hook reference. Each client's contract differs in what a post-tool hook may replace, and that difference decides whether the post-result screen can withhold anything or only annotate it. Adding another client means reading that client's contract rather than assuming this one carries over.
+The entries above are for Claude Code. The same two commands also answer Cursor, VS Code agent mode and Hermes Agent, each in its own shape, and read which one is calling from the payload; `--client cursor|vscode|hermes|claude` names it instead. The configuration for each is in the repository's `docs/hooks.md`. What differs is what each agent lets a hook do:
+
+- Cursor does not act on `ask` before a call, so a hold is refused with `permission: "deny"`, and the reason names `agent-chaperone approve <id>`. Its own tools' results cannot be replaced, so one judged unsafe is annotated through `additional_context`, and `Read` and `Grep` results reach the hook only as a summary and are not screened.
+- VS Code answers like Claude Code before a call. After one it cannot replace a result, so one judged unsafe gets `additionalContext` saying it could not be withheld. It ignores matchers, so the command screens its own list of tools.
+- Hermes Agent runs the plugin in `integrations/hermes/`, which holds a call through Hermes's approval prompt and replaces a result judged unsafe.

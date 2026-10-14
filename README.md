@@ -79,7 +79,7 @@ Methodology, per-threshold tables, the misses, and the raw recorded model respon
 
 ## Which agents it covers
 
-The proxy works with any client that starts MCP servers from a configuration file, because it sits on the connection rather than inside the client. `wrap` edits a configuration that lists servers under `mcpServers` or `servers`; one in another format takes the change from [Wrapping an MCP server](#wrapping-an-mcp-server) by hand.
+The proxy works with any client that starts MCP servers from a configuration file, because it sits on the connection rather than inside the client. `wrap` edits a JSON configuration that lists servers under `mcpServers` or `servers`, and Hermes Agent's YAML one under `mcp_servers`; one in another format takes the change from [Wrapping an MCP server](#wrapping-an-mcp-server) by hand.
 
 An agent's own tools are a different matter. Reaching them takes that agent's hook contract, and each one differs in what a hook can stop before a call and change after it.
 
@@ -87,6 +87,9 @@ An agent's own tools are a different matter. Reaching them takes that agent's ho
 | --- | --- | --- |
 | Claude Code | the proxy | the plugin, or hooks you register ([guide](https://agentchaperone.dev/guides/claude-code)) |
 | Claude Code with [ECC](https://github.com/affaan-m/ECC) | the proxy | the same plugin, next to ECC's hooks ([guide](https://agentchaperone.dev/guides/ecc)) |
+| Cursor | the proxy | hooks you register; a held call is refused, and a result can be annotated but not withheld ([guide](./docs/hooks.md#cursor)) |
+| VS Code agent mode | the proxy | hooks you register; a result can be annotated but not withheld ([guide](./docs/hooks.md#vs-code)) |
+| Hermes Agent | the proxy | the plugin in `integrations/hermes/` ([guide](./docs/hooks.md#hermes-agent)) |
 | Any other MCP client | the proxy | not yet ([#78](https://github.com/agent-chaperone/agent-chaperone/issues/78)) |
 
 ## Wrapping an MCP server

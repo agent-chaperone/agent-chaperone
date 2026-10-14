@@ -249,6 +249,8 @@ export {
   POST_TOOL_USE,
   POST_TOOL_USE_FAILURE,
   PRE_TOOL_USE,
+  clientOf,
+  dialectOf,
   eventOf,
   outputText,
   postResponse,
@@ -259,6 +261,7 @@ export {
   runPreHook,
 } from './hooks/index.js';
 export type {
+  Client,
   HookCall,
   HookOptions,
   OutputText,
