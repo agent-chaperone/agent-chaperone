@@ -116,6 +116,8 @@ Each adapter was written from the agent's published contract and its source at a
 
 `bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,947 recorded responses from `jev-1.13.0` (2026-09-21). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
+The pre-call set now holds 257 calls. The 138 added for #18 cover container and cluster tooling, infrastructure as code, package publishing, CI configuration and secret managers, with benign calls from each family and 21 marked ambiguous. They have no recorded responses yet, so the README's pre-call numbers still describe the original 119 until the harness is run on them.
+
 ## What's In Progress
 
 Nothing in flight. Everything M1 needs is built: MCP traffic and a client's own tools are both screened, every decision is recorded, and a held call can be released.
