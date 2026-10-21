@@ -57,23 +57,23 @@ When the log stops surprising you, set `mode: enforce` in `~/.config/agent-chape
 What these numbers do and do not cover matters as much as the numbers, so the scope comes first: they measure the screening questions on public benchmark sets and a hand-labeled set of calls, with one model version, and adaptive attacks written against this tool are out of scope. A detection is not the same as a block either, because what happens to a flagged result depends on how high it scored.
 
 - **Results that try to instruct the agent** (InjecAgent, 1,394 tool responses): AUC 0.976. At the shipped thresholds, a result scoring 0.5 or more reaches the agent with a warning attached, which covered 80.5 percent of the injected responses with 9 false positives. One scoring 0.8 or more with harmful severity is withheld outright, which covered 34.1 percent with none.
-- **Dangerous tool calls** (100 hand-labeled calls, 51 of them dangerous): AUC 0.993. Taking the larger of the destructive and exfiltration answers, 0.7 caught 45 of the 51 with 1 false positive.
+- **Dangerous tool calls** (217 hand-labeled calls, 108 of them dangerous): AUC 0.984. Taking the larger of the destructive and exfiltration answers, 0.7 caught 99 of the 108 with 9 false positives. Most of those were routine but consequential operations, such as a deploy to staging or a publish to a test registry.
 - **Text that discusses injection without attempting it** (68 benign paragraphs): 8 crossed 0.5, which is the false-positive class to expect from documentation and security writing.
 
-The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0` on 2026-09-21, one request per item. The batteries sent were the ones the tool sends, question for question. The full run is 1,947 requests and costs $0.062 at the published price.
+The screening questions were evaluated against public prompt-injection benchmarks and a hand-labeled set of tool calls, using `jev-1.13.0`, one request per item, completed on 2026-09-21 and extended on 2026-10-21 when the hand-labeled set grew. The batteries sent were the ones the tool sends, question for question. The full run is 2,085 requests and costs $0.066 at the published price.
 
 | Set | Items | Positives | AUC | Precision / recall at 0.5 | at 0.3 |
 | --- | ---: | ---: | ---: | --- | --- |
 | InjecAgent tool responses | 1,394 | 1,054 | 0.976 | 0.989 / 0.805 | 0.956 / 0.949 |
 | BIPIA email | 250 | 200 | 1.000 | 1.000 / 0.825 | 1.000 / 0.850 |
 | Discusses injection, benign | 68 | 0 | n/a | 8 false positives | 13 false positives |
-| Hand-labeled tool calls | 100 | 51 | 0.993 | 0.980 / 0.961 | 0.909 / 0.980 |
+| Hand-labeled tool calls | 217 | 108 | 0.984 | 0.898 / 0.981 | 0.863 / 0.991 |
 
-Each screened call costs one model request, averaging 754 input tokens. A call the allow or deny list settles never reaches the model.
+Each screened call costs one model request, averaging 749 input tokens. A call the allow or deny list settles never reaches the model.
 
 Three questions the tool asks are not in these numbers. `policy_violation` and `off_task` are sent only when a policy or a task is configured, and no row here has either. `description_steers` asks about a tool description rather than a call or a result, and the benchmark has no set of tool lists to ask it against, so nothing above measures any of the three.
 
-The hand-labeled set leans toward the built-in tool case on purpose: 37 of the 100 scored calls are shell commands, and 21 of the 51 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
+The hand-labeled set leans toward the built-in tool case on purpose: 125 of the 217 scored calls are shell commands, and 64 of the 108 dangerous ones are. On the clients above, those are built-in tools rather than MCP traffic, so they reach the screens through the hooks adapter.
 
 Methodology, per-threshold tables, the misses, and the raw recorded model responses are in [`bench/`](./bench/README.md).
 

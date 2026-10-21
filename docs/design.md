@@ -168,7 +168,7 @@ Decision in code, first match wins, thresholds from policy:
 6. `off_task` at or above threshold: hold (default threshold high).
 7. Otherwise forward.
 
-`severity` does not gate. It labels the hold ("high" or "critical") in the elicitation text and the log, and a hold resting on a low-confidence severity score is labeled "uncertain", so the user knows the tool is asking rather than asserting. Measured on the hand-labeled set, `max(destructive, exfiltration)` reached AUC 0.993, and severity separated dangerous from benign calls with 92 percent of dangerous calls at or above level 1.5 against 4 percent of benign ones.
+`severity` does not gate. It labels the hold ("high" or "critical") in the elicitation text and the log, and a hold resting on a low-confidence severity score is labeled "uncertain", so the user knows the tool is asking rather than asserting. Measured on the hand-labeled set, `max(destructive, exfiltration)` reached AUC 0.984, and severity separated dangerous from benign calls with 95 percent of dangerous calls at or above level 1.5 against 8 percent of benign ones.
 
 ### 5.2 Post-result screen (tool results and resource bodies)
 
@@ -320,7 +320,7 @@ A backend reached through OpenRouter or the Vercel AI Gateway answers the same b
 
 - One backend request per screened message, plus one per extra chunk.
 - Judgments cached by content hash, so a file read twice costs nothing the second time.
-- Measured on the benchmark: 754 input tokens per request on average, at $0.042 per million input tokens. Wall-clock time per request is a property of the backend and the network between it and you, so it is not quoted here.
+- Measured on the benchmark: 749 input tokens per request on average, at $0.042 per million input tokens. Wall-clock time per request is a property of the backend and the network between it and you, so it is not quoted here.
 - Published rate limits for the model are per account; a single agent stays well inside them, and a fleet sharing one account may not.
 - No latency is added to messages that are not screened.
 
