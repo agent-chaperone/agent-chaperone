@@ -1,5 +1,11 @@
 # agent-chaperone
 
+## 0.4.1
+
+### Patch Changes
+
+- The README's measured results include the 138 hand-labeled tool calls added to the benchmark in #91, covering container and cluster tooling, infrastructure as code, package publishing, CI configuration and secret managers. Over all 217 scored calls the pre-call AUC is 0.984, and at the 0.7 hold line 99 of the 108 dangerous calls are caught with 9 false positives, most of them routine but consequential operations such as a deploy to staging or a publish to a test registry. Nothing the package does has changed.
+
 ## 0.4.0
 
 ### Minor Changes
