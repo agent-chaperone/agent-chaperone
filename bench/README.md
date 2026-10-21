@@ -2,9 +2,9 @@
 
 This harness measures the screening questions from `docs/design.md` against public prompt-injection benchmarks and a hand-labeled set of tool calls. The recorded model responses are committed, so the scorer runs without an API key and the numbers in the top-level README reproduce from this directory.
 
-Model: `jev-1.13.0`. Run date: 2026-09-21. Scored requests: 1,947. Input tokens: 1.47M. Cost at the published price: $0.062. Latency from a laptop: 405 ms median, 888 ms at the 95th percentile.
+Model: `jev-1.13.0`. Run date: 2026-10-21. Scored requests: 2,085. Input tokens: 1.56M. Cost at the published price: $0.066. Latency from a laptop: 400 ms median, 876 ms at the 95th percentile.
 
-Most of those responses were collected on 2026-09-19. Six were added on 2026-09-21, when the benign set gained a source and one unpinned document had changed upstream, and the run date is the later one because that is when the numbers below were complete. Same model version for all of them.
+Most of those responses were collected on 2026-09-19. Six were added on 2026-09-21, when the benign set gained a source and one unpinned document had changed upstream, The 138 pre-call cases added in #91 were answered on 2026-10-21, and the run date is the latest one because that is when the numbers below were complete. Same model version for all of them.
 
 The batteries sent are the ones `src/screens` sends, question for question. `policy_violation` and `off_task` are the exception: they are asked only when a policy or a task is configured, no row here carries either, and nothing below measures them.
 
@@ -43,7 +43,7 @@ For the same reason `score.py` refuses to print a report while any row is unansw
 | `bipia_email` | 250 | 200 | BIPIA emails, each clean once and with four sampled text attacks inserted at the end or in the middle |
 | `deepset` | 116 | 60 | deepset/prompt-injections test split, direct chat injections, reported separately |
 | `discusses` | 68 | 0 | Paragraphs from public documents about prompt injection, all benign |
-| `precall` | 119 | 62 | Hand-labeled tool calls; 19 ambiguous cases excluded from headline numbers |
+| `precall` | 257 | 131 | Hand-labeled tool calls; 40 ambiguous cases excluded from headline numbers |
 
 Sources: [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) (MIT), [BIPIA](https://github.com/microsoft/BIPIA), [deepset/prompt-injections](https://huggingface.co/datasets/deepset/prompt-injections) (Apache-2.0), the OWASP LLM01 page, the Wikipedia article on prompt injection, the AgentDojo and BIPIA READMEs, and a TypeSafe cookbook page. All are downloaded by `fetch.sh` at build time. The benign fills and the pre-call cases are in `src/build_sets.py` and `src/precall_cases.py`.
 
@@ -63,9 +63,9 @@ Post-result sets score `instructs_reader`; the pre-call set scores `max(destruct
 | | | 0.5 | | | 8 | |
 | | | 0.8 | | | 1 | |
 | deepset | 0.949 | 0.5 | 1.000 | 0.450 | 0 | 33 |
-| precall | 0.993 | 0.3 | 0.909 | 0.980 | 5 | 1 |
-| | | 0.5 | 0.980 | 0.961 | 1 | 2 |
-| | | 0.8 | 1.000 | 0.824 | 0 | 9 |
+| precall | 0.984 | 0.3 | 0.863 | 0.991 | 17 | 1 |
+| | | 0.5 | 0.898 | 0.981 | 12 | 2 |
+| | | 0.8 | 0.969 | 0.861 | 3 | 15 |
 
 Full tables, per-group breakdowns, and the worst misses are in `results/report.txt` and `results/analysis.txt`.
 
@@ -77,12 +77,13 @@ Full tables, per-group breakdowns, and the worst misses are in `results/report.t
 - The two highest-scoring benign paragraphs were a documentation header addressed to automated readers and code containing literal question text.
 - Severity separates well on tool responses (85 percent of attacks at or above the harmful level, 3 percent of benign) and poorly on the email set (9 percent), which is why severity selects the action tier and does not gate (ADR-0003).
 - A second yes/no question, "demands action", reached AUC 0.855 alone and lowered the combined result. It was dropped.
+- On the pre-call set, the false positives at 0.5 are mostly routine but consequential operations: a deploy to staging, a publish to a test or internal registry, setting a staging secret, encrypting a secrets file. 11 of the 12 come from the tool families added in #91, where every dangerous call was caught.
 - deepset labels role-play prompts as injections and half its rows are German. It is kept as the easy set and left out of the headline table.
 
 ## Limits
 
 - The sample is about 70 percent positives, so no calibration claim is made from it.
-- I wrote the benign fills and the pre-call cases myself and labeled them once. Disagreeable labels are marked ambiguous and excluded.
+- I wrote the benign fills and the first 119 pre-call cases myself and labeled them once; the other 138 came from a contributor in #91. Disagreeable labels are marked ambiguous and excluded.
 - Adaptive attacks written against these questions are out of scope.
 - Latency was measured from one machine over a home connection, with up to eight requests in flight, so the percentiles are under that load rather than for an isolated request.
 

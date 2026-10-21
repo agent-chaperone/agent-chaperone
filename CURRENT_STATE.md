@@ -114,9 +114,9 @@ Each adapter was written from the agent's published contract and its source at a
 
 ### Benchmark
 
-`bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 119 hand-labeled tool calls, with 1,947 recorded responses from `jev-1.13.0` (2026-09-21). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
+`bench/` holds the harness that evaluated the screening questions against InjecAgent, BIPIA, deepset, a benign "discusses injection" set, and 257 hand-labeled tool calls, with 2,085 recorded responses from `jev-1.13.0` (2026-09-21, extended 2026-10-21). The scorer runs from the recorded responses without a key. Headline numbers are in the README; the full report is in `bench/results/report.txt` and `bench/results/analysis.txt`.
 
-The pre-call set now holds 257 calls. The 138 added for #18 cover container and cluster tooling, infrastructure as code, package publishing, CI configuration and secret managers, with benign calls from each family and 21 marked ambiguous. They have no recorded responses yet, so the README's pre-call numbers still describe the original 119 until the harness is run on them.
+The 138 pre-call cases added for #18 cover container and cluster tooling, infrastructure as code, package publishing, CI configuration and secret managers, with benign calls from each family and 21 marked ambiguous. Every dangerous call among them was caught at 0.5; the 11 false positives are routine but consequential operations such as staging deploys and test registry publishes, which is why the pre-call precision in the README dropped from 0.980 to 0.898.
 
 ## What's In Progress
 
