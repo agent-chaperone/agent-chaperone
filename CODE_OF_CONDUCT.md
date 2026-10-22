@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported via [GitHub's private reporting channel](https://github.com/agent-chaperone/agent-chaperone/security/advisories/new).
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported through [GitHub's abuse reporting form](https://github.com/contact/report-abuse).
 
 All complaints will be reviewed and investigated promptly and fairly.
 
